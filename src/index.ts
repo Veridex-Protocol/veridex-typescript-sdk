@@ -14,8 +14,7 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
-  AuthenticationResponseJSON,
-} from "@simplewebauthn/browser";
+} from "@simplewebauthn/types";
 import { ethers } from "ethers";
 
 // ============================================================================
@@ -48,6 +47,14 @@ export interface ExecuteParams {
   target: string;
   value: bigint;
   data: string;
+}
+
+export interface BridgeParams {
+  sourceChain: number; // Chain where vault holds the tokens
+  token: string; // Token address (or "native" for native token)
+  amount: bigint;
+  destinationChain: number; // Wormhole chain ID of destination
+  recipient: string; // Recipient address on destination chain (hex string)
 }
 
 export interface WebAuthnSignature {
@@ -86,6 +93,7 @@ export const ACTION_TYPES = {
   TRANSFER: 1,
   EXECUTE: 2,
   CONFIG: 3,
+  BRIDGE: 4,
 } as const;
 
 // Hub Contract ABI (minimal)
@@ -94,6 +102,7 @@ const HUB_ABI = [
   "function getNonce(bytes32 userKeyHash) external view returns (uint256)",
   "function encodeTransferAction(address token, address recipient, uint256 amount) external pure returns (bytes)",
   "function encodeExecuteAction(address target, uint256 value, bytes data) external pure returns (bytes)",
+  "function encodeBridgeAction(bytes32 token, uint256 amount, uint16 targetChain, bytes32 recipient) external pure returns (bytes)",
   "function messageFee() external view returns (uint256)",
   "event Dispatched(bytes32 indexed userKeyHash, uint16 targetChain, uint256 nonce, uint64 sequence, bytes actionPayload)",
 ];
@@ -103,19 +112,26 @@ const HUB_ABI = [
 // ============================================================================
 
 export class VeridexClient {
-  private config: VeridexConfig;
+  private readonly _config: VeridexConfig;
   private provider: ethers.JsonRpcProvider;
   private hubContract: ethers.Contract;
   private credential: PasskeyCredential | null = null;
 
   constructor(config: VeridexConfig) {
-    this.config = config;
+    this._config = config;
     this.provider = new ethers.JsonRpcProvider(config.hubRpcUrl);
     this.hubContract = new ethers.Contract(
       config.hubContractAddress,
       HUB_ABI,
       this.provider
     );
+  }
+
+  /**
+   * Get the current configuration
+   */
+  get config(): VeridexConfig {
+    return this._config;
   }
 
   // ==========================================================================
@@ -210,14 +226,16 @@ export class VeridexClient {
     if (!this.credential) {
       throw new Error("No credential set");
     }
-    return await this.hubContract.getNonce(this.credential.keyHash);
+    const getNonceFn = this.hubContract.getFunction("getNonce");
+    return await getNonceFn(this.credential.keyHash);
   }
 
   /**
    * Get the Wormhole message fee
    */
   async getMessageFee(): Promise<bigint> {
-    return await this.hubContract.messageFee();
+    const messageFeeFn = this.hubContract.getFunction("messageFee");
+    return await messageFeeFn();
   }
 
   /**
@@ -226,7 +244,8 @@ export class VeridexClient {
   async buildTransferPayload(params: TransferParams): Promise<string> {
     const token =
       params.token === "native" ? ethers.ZeroAddress : params.token;
-    return await this.hubContract.encodeTransferAction(
+    const encodeTransferActionFn = this.hubContract.getFunction("encodeTransferAction");
+    return await encodeTransferActionFn(
       token,
       params.recipient,
       params.amount
@@ -237,10 +256,32 @@ export class VeridexClient {
    * Build an execute action payload
    */
   async buildExecutePayload(params: ExecuteParams): Promise<string> {
-    return await this.hubContract.encodeExecuteAction(
+    const encodeExecuteActionFn = this.hubContract.getFunction("encodeExecuteAction");
+    return await encodeExecuteActionFn(
       params.target,
       params.value,
       params.data
+    );
+  }
+
+  /**
+   * Build a bridge action payload for cross-chain token transfers
+   */
+  async buildBridgePayload(params: BridgeParams): Promise<string> {
+    // Convert token address to bytes32
+    const tokenBytes32 = params.token === "native" 
+      ? ethers.zeroPadValue(ethers.ZeroAddress, 32)
+      : ethers.zeroPadValue(params.token, 32);
+    
+    // Ensure recipient is bytes32
+    const recipientBytes32 = ethers.zeroPadValue(params.recipient, 32);
+    
+    const encodeBridgeActionFn = this.hubContract.getFunction("encodeBridgeAction");
+    return await encodeBridgeActionFn(
+      tokenBytes32,
+      params.amount,
+      params.destinationChain,
+      recipientBytes32
     );
   }
 
@@ -277,7 +318,8 @@ export class VeridexClient {
 
     // Submit transaction
     const hubWithSigner = this.hubContract.connect(signer) as ethers.Contract;
-    const tx = await hubWithSigner.authenticateAndDispatch(
+    const authenticateAndDispatchFn = hubWithSigner.getFunction("authenticateAndDispatch");
+    const tx = await authenticateAndDispatchFn(
       {
         authenticatorData: signature.authenticatorData,
         clientDataJSON: signature.clientDataJSON,
@@ -332,7 +374,8 @@ export class VeridexClient {
     const messageFee = await this.getMessageFee();
 
     const hubWithSigner = this.hubContract.connect(signer) as ethers.Contract;
-    const tx = await hubWithSigner.authenticateAndDispatch(
+    const authenticateAndDispatchFn = hubWithSigner.getFunction("authenticateAndDispatch");
+    const tx = await authenticateAndDispatchFn(
       {
         authenticatorData: signature.authenticatorData,
         clientDataJSON: signature.clientDataJSON,
@@ -355,6 +398,65 @@ export class VeridexClient {
       sequence: 0n, // Parse from event
       userKeyHash: this.credential.keyHash,
       targetChain: params.targetChain,
+    };
+  }
+
+  /**
+   * Sign and dispatch a cross-chain bridge transaction
+   * This initiates a token bridge from the source chain to the destination chain
+   */
+  async bridge(
+    params: BridgeParams,
+    signer: ethers.Signer
+  ): Promise<DispatchResult> {
+    if (!this.credential) {
+      throw new Error("No credential set");
+    }
+
+    const actionPayload = await this.buildBridgePayload(params);
+    const nonce = await this.getNonce();
+    
+    // The target chain for the VAA is the source chain where the vault is
+    const challenge = buildChallenge(
+      this.credential.keyHash,
+      params.sourceChain,
+      nonce,
+      actionPayload
+    );
+
+    const signature = await this.signWithPasskey(challenge);
+    const messageFee = await this.getMessageFee();
+
+    const hubWithSigner = this.hubContract.connect(signer) as ethers.Contract;
+    const authenticateAndDispatchFn = hubWithSigner.getFunction("authenticateAndDispatch");
+    const tx = await authenticateAndDispatchFn(
+      {
+        authenticatorData: signature.authenticatorData,
+        clientDataJSON: signature.clientDataJSON,
+        challengeIndex: signature.challengeIndex,
+        typeIndex: signature.typeIndex,
+        r: signature.r,
+        s: signature.s,
+      },
+      this.credential.publicKeyX,
+      this.credential.publicKeyY,
+      params.sourceChain, // Target the vault's chain
+      actionPayload,
+      { value: messageFee }
+    );
+
+    const receipt = await tx.wait();
+
+    // Parse Dispatched event
+    const dispatchedEvent = receipt.logs.find(
+      (log: any) => log.topics[0] === ethers.id("Dispatched(bytes32,uint16,uint256,uint64,bytes)")
+    );
+
+    return {
+      transactionHash: receipt.hash,
+      sequence: dispatchedEvent ? BigInt(dispatchedEvent.data.slice(0, 66)) : 0n,
+      userKeyHash: this.credential.keyHash,
+      targetChain: params.sourceChain,
     };
   }
 
@@ -466,7 +568,8 @@ function extractPublicKeyFromAttestation(
   // The COSE key for P-256 contains x and y coordinates
   
   // This is a simplified extraction - real implementation needs CBOR parsing
-  const authData = attestationObject.slice(0, attestationObject.length);
+  const _authData = attestationObject.slice(0, attestationObject.length);
+  void _authData; // Used for CBOR parsing in production
   
   // Find the COSE key (after rpIdHash + flags + signCount + aaguid + credIdLen + credId)
   // COSE key for EC2 (P-256):
@@ -492,13 +595,17 @@ function parseDERSignature(signature: Uint8Array): { r: Uint8Array; s: Uint8Arra
     throw new Error("Invalid signature format");
   }
 
-  const totalLength = signature[offset++];
+  const _totalLength = signature[offset++];
+  void _totalLength; // Validated by parsing
   
   if (signature[offset++] !== 0x02) {
     throw new Error("Invalid signature format");
   }
 
   const rLength = signature[offset++];
+  if (rLength === undefined) {
+    throw new Error("Invalid signature format: missing r length");
+  }
   let r = signature.slice(offset, offset + rLength);
   offset += rLength;
 
@@ -518,6 +625,9 @@ function parseDERSignature(signature: Uint8Array): { r: Uint8Array; s: Uint8Arra
   }
 
   const sLength = signature[offset++];
+  if (sLength === undefined) {
+    throw new Error("Invalid signature format: missing s length");
+  }
   let s = signature.slice(offset, offset + sLength);
 
   // Remove leading zero if present
