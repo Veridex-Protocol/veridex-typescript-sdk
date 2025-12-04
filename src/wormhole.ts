@@ -2,6 +2,10 @@
  * Veridex Protocol SDK - Wormhole Utilities
  * 
  * Functions for fetching VAAs, parsing messages, and interacting with Wormhole
+ * 
+ * This module integrates with the official @wormhole-foundation/sdk patterns for
+ * better chain abstraction and reliability, while providing Veridex-specific
+ * utilities for payload handling and VAA management.
  */
 
 import { ethers } from 'ethers';
@@ -9,22 +13,77 @@ import type { VAA, VAASignature, VeridexPayload } from './types.js';
 import { WORMHOLE_API } from './constants.js';
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Wormhole Consistency Levels
+ * @see https://docs.wormhole.com/wormhole/reference/glossary#consistency-level
+ */
+export const CONSISTENCY_LEVELS = {
+  /** Finalized - Wait for block finality (most secure) */
+  FINALIZED: 200,
+  /** Instant - No wait for finality (fastest, less secure) */
+  INSTANT: 201,
+  /** Safe - Standard finality (deprecated, use FINALIZED) */
+  SAFE: 200,
+} as const;
+
+/**
+ * Guardian network configuration
+ */
+export const GUARDIAN_CONFIG = {
+  /** Total number of guardians in mainnet */
+  MAINNET_GUARDIAN_COUNT: 19,
+  /** Required signatures for mainnet quorum (13/19) */
+  MAINNET_QUORUM: 13,
+  /** Total number of guardians in testnet */
+  TESTNET_GUARDIAN_COUNT: 1,
+  /** Required signatures for testnet quorum */
+  TESTNET_QUORUM: 1,
+} as const;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface FetchVAAOptions {
+  testnet?: boolean;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  onRetry?: (attempt: number, maxRetries: number) => void;
+}
+
+export interface WaitForSignaturesOptions {
+  testnet?: boolean;
+  requiredSignatures?: number;
+  maxWaitMs?: number;
+  checkIntervalMs?: number;
+  onProgress?: (currentSignatures: number, required: number) => void;
+}
+
+// ============================================================================
 // VAA Fetching
 // ============================================================================
 
 /**
  * Fetch a VAA from Wormhole guardians by sequence number
+ * 
+ * @example
+ * ```ts
+ * const vaa = await fetchVAA(
+ *   WORMHOLE_CHAIN_IDS.TESTNET.BASE_SEPOLIA,
+ *   '0x000...hubAddress',
+ *   97n,
+ *   { testnet: true }
+ * );
+ * ```
  */
 export async function fetchVAA(
   emitterChain: number,
   emitterAddress: string,
   sequence: bigint,
-  options: {
-    testnet?: boolean;
-    maxRetries?: number;
-    retryDelayMs?: number;
-    onRetry?: (attempt: number, maxRetries: number) => void;
-  } = {}
+  options: FetchVAAOptions = {}
 ): Promise<string> {
   const {
     testnet = true,
@@ -64,9 +123,68 @@ export async function fetchVAA(
 }
 
 /**
- * Fetch VAA by transaction hash
+ * Fetch VAA by transaction hash using operations API
+ * This is more reliable than the transactions API when sequence numbers don't match
  */
 export async function fetchVAAByTxHash(
+  txHash: string,
+  options: {
+    testnet?: boolean;
+    maxRetries?: number;
+    retryDelayMs?: number;
+    onRetry?: (attempt: number, maxRetries: number) => void;
+  } = {}
+): Promise<string> {
+  const {
+    testnet = true,
+    maxRetries = 60,
+    retryDelayMs = 3000,
+    onRetry,
+  } = options;
+
+  const apiBase = testnet ? WORMHOLE_API.TESTNET : WORMHOLE_API.MAINNET;
+  // Remove 0x prefix if present for the API
+  const cleanTxHash = txHash.replace(/^0x/, '');
+  const url = `${apiBase}/api/v1/operations?txHash=${cleanTxHash}`;
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url);
+
+      if (response.ok) {
+        const data = await response.json() as { 
+          operations?: Array<{ 
+            vaa?: { raw?: string }; 
+            sequence?: string;
+          }>;
+        };
+        if (data.operations && data.operations.length > 0) {
+          const operation = data.operations[0];
+          if (operation.vaa?.raw) {
+            return operation.vaa.raw;
+          }
+        }
+      }
+
+      if (i < maxRetries - 1) {
+        onRetry?.(i + 1, maxRetries);
+        await sleep(retryDelayMs);
+      }
+    } catch {
+      if (i < maxRetries - 1) {
+        onRetry?.(i + 1, maxRetries);
+        await sleep(retryDelayMs);
+      }
+    }
+  }
+
+  throw new Error(`Failed to fetch VAA after ${maxRetries} attempts`);
+}
+
+/**
+ * Fetch VAA by transaction hash using transactions API (fallback)
+ */
+export async function fetchVAAByTxHashFallback(
   txHash: string,
   options: {
     testnet?: boolean;
@@ -331,22 +449,29 @@ export async function getSequenceFromTxReceipt(
 
 /**
  * Wait for a Wormhole message to be signed by guardians
+ * 
+ * @example
+ * ```ts
+ * const vaa = await waitForGuardianSignatures(
+ *   WORMHOLE_CHAIN_IDS.TESTNET.BASE_SEPOLIA,
+ *   hubEmitter,
+ *   97n,
+ *   {
+ *     testnet: true,
+ *     onProgress: (current, required) => console.log(`${current}/${required} signatures`)
+ *   }
+ * );
+ * ```
  */
 export async function waitForGuardianSignatures(
   emitterChain: number,
   emitterAddress: string,
   sequence: bigint,
-  options: {
-    testnet?: boolean;
-    requiredSignatures?: number;
-    maxWaitMs?: number;
-    checkIntervalMs?: number;
-    onProgress?: (currentSignatures: number, required: number) => void;
-  } = {}
+  options: WaitForSignaturesOptions = {}
 ): Promise<VAA> {
   const {
     testnet = true,
-    requiredSignatures = 13,
+    requiredSignatures = testnet ? GUARDIAN_CONFIG.TESTNET_QUORUM : GUARDIAN_CONFIG.MAINNET_QUORUM,
     maxWaitMs = 120000,
     checkIntervalMs = 5000,
     onProgress,
@@ -408,6 +533,116 @@ export function getWormholeCoreBridge(wormholeChainId: number, testnet = true): 
 
   const bridges = testnet ? testnetBridges : mainnetBridges;
   return bridges[wormholeChainId] ?? '';
+}
+
+/**
+ * Get the Wormhole Token Bridge contract address for a chain
+ */
+export function getWormholeTokenBridge(wormholeChainId: number, testnet = true): string {
+  const testnetBridges: Record<number, string> = {
+    10004: '0x86F55A04690fd7815A3D802bD587e83eA888B239', // Base Sepolia
+    10005: '0x99737Ec4B815d816c49A385943baf0380e75c0Ac', // Optimism Sepolia
+    10003: '0xC7A204bDBFe983FCD8d8E61D02b475D4073fF97e', // Arbitrum Sepolia
+  };
+
+  const mainnetBridges: Record<number, string> = {
+    2: '0x3ee18B2214AFF97000D974cf647E7C347E8fa585',  // Ethereum
+    30: '0x8d2de8d2f73F1F4cAB472AC9A881C9b123C79627', // Base
+    24: '0x1D68124e65faFC907325e3EDbF8c4d84499DAa8b', // Optimism
+    23: '0x0b2402144Bb366A632D14B83F244D2e0e21bD39c', // Arbitrum
+    5: '0x5a58505a96D1dbf8dF91cB21B54419FC36e93fdE',  // Polygon
+  };
+
+  const bridges = testnet ? testnetBridges : mainnetBridges;
+  return bridges[wormholeChainId] ?? '';
+}
+
+/**
+ * Get the Wormhole Relayer contract address for a chain
+ */
+export function getWormholeRelayer(wormholeChainId: number, testnet = true): string {
+  const testnetRelayers: Record<number, string> = {
+    10004: '0x93BAD53DDfB6132b0aC8E37f6029163E63372cEE', // Base Sepolia
+    10005: '0x93BAD53DDfB6132b0aC8E37f6029163E63372cEE', // Optimism Sepolia
+    10003: '0x7B1bD7a6b4E61c2a123AC6BC2cbfC614437D0470', // Arbitrum Sepolia
+  };
+
+  const mainnetRelayers: Record<number, string> = {
+    2: '0x27428DD2d3DD32A4D7f7C497eAaa23130d894911',  // Ethereum
+    30: '0x706F82e9bb5b0813501714Ab5974216704980e31', // Base
+    24: '0x27428DD2d3DD32A4D7f7C497eAaa23130d894911', // Optimism
+    23: '0x27428DD2d3DD32A4D7f7C497eAaa23130d894911', // Arbitrum
+    5: '0x27428DD2d3DD32A4D7f7C497eAaa23130d894911',  // Polygon
+  };
+
+  const relayers = testnet ? testnetRelayers : mainnetRelayers;
+  return relayers[wormholeChainId] ?? '';
+}
+
+/**
+ * Check if a chain supports Wormhole Relayer
+ */
+export function supportsRelayer(wormholeChainId: number, testnet = true): boolean {
+  return getWormholeRelayer(wormholeChainId, testnet) !== '';
+}
+
+/**
+ * Get chain name from Wormhole chain ID
+ */
+export function getChainName(wormholeChainId: number): string {
+  const names: Record<number, string> = {
+    1: 'Solana',
+    2: 'Ethereum',
+    4: 'BSC',
+    5: 'Polygon',
+    6: 'Avalanche',
+    10: 'Fantom',
+    21: 'Sui',
+    22: 'Aptos',
+    23: 'Arbitrum',
+    24: 'Optimism',
+    30: 'Base',
+    10002: 'Sepolia',
+    10003: 'Arbitrum Sepolia',
+    10004: 'Base Sepolia',
+    10005: 'Optimism Sepolia',
+  };
+  return names[wormholeChainId] ?? `Chain ${wormholeChainId}`;
+}
+
+// ============================================================================
+// VAA Validation
+// ============================================================================
+
+/**
+ * Validate that a VAA has sufficient signatures for the given network
+ */
+export function hasQuorum(vaa: VAA, testnet = true): boolean {
+  const required = testnet ? GUARDIAN_CONFIG.TESTNET_QUORUM : GUARDIAN_CONFIG.MAINNET_QUORUM;
+  return vaa.signatures.length >= required;
+}
+
+/**
+ * Validate VAA emitter matches expected source
+ */
+export function validateEmitter(
+  vaa: VAA,
+  expectedChain: number,
+  expectedAddress: string
+): boolean {
+  const normalizedExpected = '0x' + normalizeEmitterAddress(expectedAddress);
+  return (
+    vaa.emitterChain === expectedChain &&
+    vaa.emitterAddress.toLowerCase() === normalizedExpected.toLowerCase()
+  );
+}
+
+/**
+ * Convert an EVM address to bytes32 format (for Wormhole)
+ */
+export function evmAddressToBytes32(address: string): string {
+  const hex = address.replace('0x', '').toLowerCase();
+  return '0x' + hex.padStart(64, '0');
 }
 
 // ============================================================================

@@ -27,7 +27,72 @@ export const PROTOCOL_VERSION = 1;
 // Wormhole Chain IDs
 // ============================================================================
 
+/**
+ * Wormhole Chain IDs organized by network
+ * @see https://docs.wormhole.com/wormhole/reference/constants
+ */
 export const WORMHOLE_CHAIN_IDS = {
+  MAINNET: {
+    SOLANA: 1,
+    ETHEREUM: 2,
+    TERRA: 3,
+    BSC: 4,
+    POLYGON: 5,
+    AVALANCHE: 6,
+    OASIS: 7,
+    ALGORAND: 8,
+    AURORA: 9,
+    FANTOM: 10,
+    KARURA: 11,
+    ACALA: 12,
+    KLAYTN: 13,
+    CELO: 14,
+    NEAR: 15,
+    MOONBEAM: 16,
+    NEON: 17,
+    TERRA2: 18,
+    INJECTIVE: 19,
+    OSMOSIS: 20,
+    SUI: 21,
+    APTOS: 22,
+    ARBITRUM: 23,
+    OPTIMISM: 24,
+    GNOSIS: 25,
+    PYTHNET: 26,
+    XPLA: 28,
+    BASE: 30,
+    SEI: 32,
+    ROOTSTOCK: 33,
+    SCROLL: 34,
+    MANTLE: 35,
+    BLAST: 36,
+    XLAYER: 37,
+    LINEA: 38,
+    BERACHAIN: 39,
+    SEIEVM: 40,
+  },
+  TESTNET: {
+    SOLANA_DEVNET: 1,
+    GOERLI: 2,
+    BSC_TESTNET: 4,
+    POLYGON_MUMBAI: 5,
+    AVALANCHE_FUJI: 6,
+    FANTOM_TESTNET: 10,
+    CELO_ALFAJORES: 14,
+    MOONBASE_ALPHA: 16,
+    SUI_TESTNET: 21,
+    APTOS_TESTNET: 22,
+    SEPOLIA: 10002,
+    ARBITRUM_SEPOLIA: 10003,
+    BASE_SEPOLIA: 10004,
+    OPTIMISM_SEPOLIA: 10005,
+    HOLESKY: 10006,
+    POLYGON_SEPOLIA: 10007,
+  },
+} as const;
+
+// Legacy flat exports for backward compatibility
+export const WORMHOLE_CHAIN_IDS_FLAT = {
   // Mainnets
   SOLANA: 1,
   ETHEREUM: 2,
@@ -98,7 +163,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.basescan.org',
     isEvm: true,
     contracts: {
-      hub: '0x0D2B4193e78107678a5aC29d795e0EcD361aE3A7',
+      hub: '0xf189b649ecb44708165f36619ED24ff917eF1f94',
       wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
     },
   },
@@ -110,8 +175,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia-optimism.etherscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0xB5d29EA1E2e90A24D6506E2a6a269506a12974CC',
-      vaultImplementation: '0xFbD23a6205A08A69e1E38c71180e715B29C65EE3',
+      vaultFactory: '0x677bA5C2f9c7377860c7aeB00037E1a5D12B3515',
+      vaultImplementation: '0x966248A18329037B043C21AcDae9B3161C7acB33',
       wormholeCoreBridge: '0x31377888146f3253211EFEf5c676D41ECe7D58Fe',
     },
   },
@@ -123,8 +188,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.arbiscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0x9e9716442e908A9b61F11432cC38024DD390cd2a',
-      vaultImplementation: '0xE0b9919ffDf3415355Db369C8FfA5Dd4e000052c',
+      vaultFactory: '0xbE9B9c39956448DA75Ac97E5e3dE17e34171660A',
+      vaultImplementation: '0x500853DCc54Fd1A707ec9d443032Bb7748f426d3',
       wormholeCoreBridge: '0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35',
     },
   },
