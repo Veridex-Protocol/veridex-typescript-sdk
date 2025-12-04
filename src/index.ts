@@ -2,7 +2,8 @@
  * Veridex Protocol SDK
  * 
  * Client library for interacting with the Veridex Protocol.
- * Provides WebAuthn/Passkey integration and cross-chain transaction building.
+ * Provides WebAuthn/Passkey integration, cross-chain transaction building,
+ * and Wormhole VAA handling.
  */
 
 import {
@@ -18,94 +19,32 @@ import type {
 import { ethers } from "ethers";
 
 // ============================================================================
-// Types
+// Re-export all modules
 // ============================================================================
 
-export interface VeridexConfig {
-  hubChainId: number;
-  hubRpcUrl: string;
-  hubContractAddress: string;
-  relayerUrl?: string;
-}
-
-export interface PasskeyCredential {
-  credentialId: string;
-  publicKeyX: bigint;
-  publicKeyY: bigint;
-  keyHash: string;
-}
-
-export interface TransferParams {
-  targetChain: number;
-  token: string; // address or "native"
-  recipient: string;
-  amount: bigint;
-}
-
-export interface ExecuteParams {
-  targetChain: number;
-  target: string;
-  value: bigint;
-  data: string;
-}
-
-export interface BridgeParams {
-  sourceChain: number; // Chain where vault holds the tokens
-  token: string; // Token address (or "native" for native token)
-  amount: bigint;
-  destinationChain: number; // Wormhole chain ID of destination
-  recipient: string; // Recipient address on destination chain (hex string)
-}
-
-export interface WebAuthnSignature {
-  authenticatorData: string;
-  clientDataJSON: string;
-  challengeIndex: number;
-  typeIndex: number;
-  r: bigint;
-  s: bigint;
-}
-
-export interface DispatchResult {
-  transactionHash: string;
-  sequence: bigint;
-  userKeyHash: string;
-  targetChain: number;
-}
+export * from './types.js';
+export * from './constants.js';
+export * from './wormhole.js';
+export * from './payload.js';
+export * from './utils.js';
 
 // ============================================================================
-// Constants
+// Import types for internal use
 // ============================================================================
 
-export const WORMHOLE_CHAIN_IDS = {
-  SOLANA: 1,
-  ETHEREUM: 2,
-  POLYGON: 5,
-  BSC: 4,
-  AVALANCHE: 6,
-  APTOS: 22,
-  ARBITRUM: 23,
-  OPTIMISM: 24,
-  BASE: 30,
-} as const;
+import type {
+  VeridexConfig,
+  PasskeyCredential,
+  TransferParams,
+  ExecuteParams,
+  BridgeParams,
+  WebAuthnSignature,
+  DispatchResult,
+} from './types.js';
 
-export const ACTION_TYPES = {
-  TRANSFER: 1,
-  EXECUTE: 2,
-  CONFIG: 3,
-  BRIDGE: 4,
-} as const;
-
-// Hub Contract ABI (minimal)
-const HUB_ABI = [
-  "function authenticateAndDispatch((bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, uint16 targetChain, bytes actionPayload) external payable returns (uint64 sequence)",
-  "function getNonce(bytes32 userKeyHash) external view returns (uint256)",
-  "function encodeTransferAction(address token, address recipient, uint256 amount) external pure returns (bytes)",
-  "function encodeExecuteAction(address target, uint256 value, bytes data) external pure returns (bytes)",
-  "function encodeBridgeAction(bytes32 token, uint256 amount, uint16 targetChain, bytes32 recipient) external pure returns (bytes)",
-  "function messageFee() external view returns (uint256)",
-  "event Dispatched(bytes32 indexed userKeyHash, uint16 targetChain, uint256 nonce, uint64 sequence, bytes actionPayload)",
-];
+import { HUB_ABI } from './constants.js';
+import { base64URLEncode, base64URLDecode, parseDERSignature, computeKeyHash } from './utils';
+import { buildChallenge } from './payload.js';
 
 // ============================================================================
 // Veridex Client
@@ -132,6 +71,20 @@ export class VeridexClient {
    */
   get config(): VeridexConfig {
     return this._config;
+  }
+
+  /**
+   * Get the provider instance
+   */
+  getProvider(): ethers.JsonRpcProvider {
+    return this.provider;
+  }
+
+  /**
+   * Get the hub contract instance
+   */
+  getHubContract(): ethers.Contract {
+    return this.hubContract;
   }
 
   // ==========================================================================
@@ -181,15 +134,13 @@ export class VeridexClient {
     };
 
     // Perform registration
-    const response = await startRegistration({ optionsJSON: options });
+    const response = await startRegistration(options);
 
     // Extract public key from attestation
     const publicKey = extractPublicKeyFromAttestation(response);
 
-    // Compute key hash
-    const keyHash = ethers.keccak256(
-      ethers.solidityPacked(["uint256", "uint256"], [publicKey.x, publicKey.y])
-    );
+    // Compute key hash using the imported utility
+    const keyHash = computeKeyHash(publicKey.x, publicKey.y);
 
     this.credential = {
       credentialId: response.id,
@@ -213,6 +164,24 @@ export class VeridexClient {
    */
   setCredential(credential: PasskeyCredential): void {
     this.credential = credential;
+  }
+
+  /**
+   * Create a credential from public key coordinates
+   */
+  createCredentialFromPublicKey(
+    credentialId: string,
+    publicKeyX: bigint,
+    publicKeyY: bigint
+  ): PasskeyCredential {
+    const keyHash = computeKeyHash(publicKeyX, publicKeyY);
+    this.credential = {
+      credentialId,
+      publicKeyX,
+      publicKeyY,
+      keyHash,
+    };
+    return this.credential;
   }
 
   // ==========================================================================
@@ -488,7 +457,7 @@ export class VeridexClient {
       timeout: 60000,
     };
 
-    const response = await startAuthentication({ optionsJSON: options });
+    const response = await startAuthentication(options);
 
     // Parse response
     const authenticatorData = base64URLDecode(response.response.authenticatorData);
@@ -515,41 +484,8 @@ export class VeridexClient {
 }
 
 // ============================================================================
-// Helper Functions
+// Helper Functions (internal only)
 // ============================================================================
-
-/**
- * Build the challenge bytes for signing
- */
-function buildChallenge(
-  userKeyHash: string,
-  targetChain: number,
-  nonce: bigint,
-  actionPayload: string
-): Uint8Array {
-  const encoded = ethers.solidityPacked(
-    ["bytes32", "uint16", "uint256", "bytes"],
-    [userKeyHash, targetChain, nonce, actionPayload]
-  );
-  return ethers.getBytes(ethers.keccak256(encoded));
-}
-
-/**
- * Base64URL encode
- */
-function base64URLEncode(buffer: Uint8Array): string {
-  const base64 = Buffer.from(buffer).toString("base64");
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-/**
- * Base64URL decode
- */
-function base64URLDecode(str: string): Uint8Array {
-  const base64 = str.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-  return new Uint8Array(Buffer.from(padded, "base64"));
-}
 
 /**
  * Extract public key from WebAuthn attestation response
@@ -584,73 +520,8 @@ function extractPublicKeyFromAttestation(
   };
 }
 
-/**
- * Parse DER-encoded ECDSA signature to r and s values
- */
-function parseDERSignature(signature: Uint8Array): { r: Uint8Array; s: Uint8Array } {
-  // DER format: 0x30 [total-length] 0x02 [r-length] [r] 0x02 [s-length] [s]
-  let offset = 0;
-
-  if (signature[offset++] !== 0x30) {
-    throw new Error("Invalid signature format");
-  }
-
-  const _totalLength = signature[offset++];
-  void _totalLength; // Validated by parsing
-  
-  if (signature[offset++] !== 0x02) {
-    throw new Error("Invalid signature format");
-  }
-
-  const rLength = signature[offset++];
-  if (rLength === undefined) {
-    throw new Error("Invalid signature format: missing r length");
-  }
-  let r = signature.slice(offset, offset + rLength);
-  offset += rLength;
-
-  // Remove leading zero if present (for positive number representation)
-  if (r[0] === 0x00 && r.length > 32) {
-    r = r.slice(1);
-  }
-  // Pad to 32 bytes if needed
-  if (r.length < 32) {
-    const padded = new Uint8Array(32);
-    padded.set(r, 32 - r.length);
-    r = padded;
-  }
-
-  if (signature[offset++] !== 0x02) {
-    throw new Error("Invalid signature format");
-  }
-
-  const sLength = signature[offset++];
-  if (sLength === undefined) {
-    throw new Error("Invalid signature format: missing s length");
-  }
-  let s = signature.slice(offset, offset + sLength);
-
-  // Remove leading zero if present
-  if (s[0] === 0x00 && s.length > 32) {
-    s = s.slice(1);
-  }
-  // Pad to 32 bytes if needed
-  if (s.length < 32) {
-    const padded = new Uint8Array(32);
-    padded.set(s, 32 - s.length);
-    s = padded;
-  }
-
-  return { r, s };
-}
-
 // ============================================================================
-// Exports
+// Default Export
 // ============================================================================
 
-export {
-  buildChallenge,
-  base64URLEncode,
-  base64URLDecode,
-  parseDERSignature,
-};
+export default VeridexClient;
