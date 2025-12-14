@@ -14,7 +14,10 @@ import { TESTNET_CHAINS, MAINNET_CHAINS } from './constants.js';
  * Base64URL encode a buffer
  */
 export function base64URLEncode(buffer: Uint8Array): string {
-  const base64 = Buffer.from(buffer).toString('base64');
+  // Convert Uint8Array to base64 using browser APIs
+  const bytes = Array.from(buffer);
+  const binary = String.fromCharCode(...bytes);
+  const base64 = btoa(binary);
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
@@ -24,7 +27,13 @@ export function base64URLEncode(buffer: Uint8Array): string {
 export function base64URLDecode(str: string): Uint8Array {
   const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-  return new Uint8Array(Buffer.from(padded, 'base64'));
+  // Use browser's atob for base64 decoding
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 // ============================================================================
