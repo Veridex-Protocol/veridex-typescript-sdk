@@ -13,6 +13,7 @@ import type {
     BridgeParams,
     DispatchResult,
     WebAuthnSignature,
+    VaultCreationResult,
 } from '../../core/types.js';
 import { encodeTransferAction, encodeExecuteAction, encodeBridgeAction } from '../../payload.js';
 
@@ -34,6 +35,33 @@ export interface EVMClientConfig {
 }
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * EIP-1167 minimal proxy bytecode prefix (before implementation address)
+ */
+const PROXY_BYTECODE_PREFIX = '0x3d602d80600a3d3981f3363d3d373d3d3d363d73';
+
+/**
+ * EIP-1167 minimal proxy bytecode suffix (after implementation address)
+ */
+const PROXY_BYTECODE_SUFFIX = '5af43d82803e903d91602b57fd5bf3';
+
+/**
+ * ERC20 ABI for balance and transfer operations
+ */
+const ERC20_ABI = [
+    'function balanceOf(address owner) view returns (uint256)',
+    'function decimals() view returns (uint8)',
+    'function symbol() view returns (string)',
+    'function name() view returns (string)',
+    'function allowance(address owner, address spender) view returns (uint256)',
+    'function transfer(address to, uint256 amount) returns (bool)',
+    'function approve(address spender, uint256 amount) returns (bool)',
+];
+
+// ============================================================================
 // Hub Contract ABI (minimal)
 // ============================================================================
 
@@ -47,6 +75,18 @@ const HUB_ABI = [
 ];
 
 // ============================================================================
+// Factory Contract ABI (minimal)
+// ============================================================================
+
+const FACTORY_ABI = [
+    'function createVault(bytes32 ownerKeyHash) returns (address vault)',
+    'function getVault(bytes32 ownerKeyHash) view returns (address)',
+    'function computeVaultAddress(bytes32 ownerKeyHash) view returns (address vault)',
+    'function vaultExists(bytes32 ownerKeyHash) view returns (bool)',
+    'function implementation() view returns (address)',
+];
+
+// ============================================================================
 // EVMClient Class
 // ============================================================================
 
@@ -57,6 +97,8 @@ export class EVMClient implements ChainClient {
     private config: ChainConfig;
     private provider: ethers.JsonRpcProvider;
     private hubContract: ethers.Contract;
+    private factoryContract: ethers.Contract | null = null;
+    private cachedImplementation: string | null = null;
 
     constructor(config: EVMClientConfig) {
         this.config = {
@@ -81,6 +123,20 @@ export class EVMClient implements ChainClient {
             HUB_ABI,
             this.provider
         );
+
+        // Initialize factory contract if address is provided
+        if (config.vaultFactory) {
+            this.factoryContract = new ethers.Contract(
+                config.vaultFactory,
+                FACTORY_ABI,
+                this.provider
+            );
+        }
+
+        // Cache implementation address if provided
+        if (config.vaultImplementation) {
+            this.cachedImplementation = config.vaultImplementation;
+        }
     }
 
     getConfig(): ChainConfig {
@@ -190,6 +246,15 @@ export class EVMClient implements ChainClient {
 
     async getVaultAddress(userKeyHash: string): Promise<string | null> {
         try {
+            // Try factory first if available
+            if (this.factoryContract) {
+                const address = await this.factoryContract.getVault(userKeyHash);
+                if (address !== ethers.ZeroAddress) {
+                    return address;
+                }
+            }
+
+            // Fallback to hub contract
             const address = await this.hubContract.getVaultAddress(userKeyHash);
             if (address === ethers.ZeroAddress) {
                 return null;
@@ -201,8 +266,56 @@ export class EVMClient implements ChainClient {
         }
     }
 
+    /**
+     * Compute vault address deterministically without querying the chain
+     * Uses CREATE2 with EIP-1167 minimal proxy pattern
+     */
+    computeVaultAddress(userKeyHash: string): string {
+        const factoryAddress = this.getFactoryAddress();
+        const implementationAddress = this.getImplementationAddress();
+
+        if (!factoryAddress || !implementationAddress) {
+            throw new Error('Factory and implementation addresses required for address computation');
+        }
+
+        // Compute salt: keccak256(abi.encodePacked(factory, keyHash))
+        const salt = ethers.keccak256(
+            ethers.solidityPacked(
+                ['address', 'bytes32'],
+                [factoryAddress, userKeyHash]
+            )
+        );
+
+        // Build EIP-1167 initcode
+        const initCode = this.buildProxyInitCode(implementationAddress);
+        const initCodeHash = ethers.keccak256(initCode);
+
+        // CREATE2 address computation:
+        // address = keccak256(0xff ++ factory ++ salt ++ initCodeHash)[12:]
+        const create2Data = ethers.solidityPacked(
+            ['bytes1', 'address', 'bytes32', 'bytes32'],
+            ['0xff', factoryAddress, salt, initCodeHash]
+        );
+
+        const hash = ethers.keccak256(create2Data);
+        // Take last 20 bytes as address
+        return ethers.getAddress('0x' + hash.slice(26));
+    }
+
+    /**
+     * Build EIP-1167 minimal proxy initcode
+     */
+    private buildProxyInitCode(implementationAddress: string): string {
+        const impl = implementationAddress.toLowerCase().replace('0x', '');
+        return PROXY_BYTECODE_PREFIX + impl + PROXY_BYTECODE_SUFFIX;
+    }
+
     async vaultExists(userKeyHash: string): Promise<boolean> {
         try {
+            // Try factory first if available
+            if (this.factoryContract) {
+                return await this.factoryContract.vaultExists(userKeyHash);
+            }
             return await this.hubContract.vaultExists(userKeyHash);
         } catch (error) {
             console.error('Error checking vault existence:', error);
@@ -210,16 +323,201 @@ export class EVMClient implements ChainClient {
         }
     }
 
-    async createVault(userKeyHash: string, signer: ethers.Signer): Promise<string> {
-        const hubWithSigner = this.hubContract.connect(signer) as any;
-        const tx = await hubWithSigner.createVault(userKeyHash);
-        await tx.wait();
+    async createVault(userKeyHash: string, signer: ethers.Signer): Promise<VaultCreationResult> {
+        // Check if vault already exists
+        const exists = await this.vaultExists(userKeyHash);
+        if (exists) {
+            const address = await this.getVaultAddress(userKeyHash);
+            if (address) {
+                return {
+                    address,
+                    transactionHash: '',
+                    blockNumber: 0,
+                    gasUsed: 0n,
+                    alreadyExisted: true,
+                };
+            }
+        }
+
+        // Create vault using factory or hub
+        let tx: ethers.TransactionResponse;
+        
+        if (this.factoryContract) {
+            const factoryWithSigner = this.factoryContract.connect(signer) as ethers.Contract;
+            tx = await factoryWithSigner.createVault(userKeyHash);
+        } else {
+            const hubWithSigner = this.hubContract.connect(signer) as ethers.Contract;
+            tx = await hubWithSigner.createVault(userKeyHash);
+        }
+
+        const receipt = await tx.wait();
+        if (!receipt) {
+            throw new Error('Transaction failed - no receipt');
+        }
 
         const vaultAddress = await this.getVaultAddress(userKeyHash);
         if (!vaultAddress) {
-            throw new Error('Failed to create vault');
+            throw new Error('Failed to create vault - address not found after creation');
         }
 
-        return vaultAddress;
+        return {
+            address: vaultAddress,
+            transactionHash: receipt.hash,
+            blockNumber: receipt.blockNumber,
+            gasUsed: receipt.gasUsed,
+            alreadyExisted: false,
+        };
+    }
+
+    async estimateVaultCreationGas(userKeyHash: string): Promise<bigint> {
+        try {
+            if (this.factoryContract) {
+                return await this.factoryContract.createVault.estimateGas(userKeyHash);
+            }
+            return await this.hubContract.createVault.estimateGas(userKeyHash);
+        } catch (error) {
+            // Return a default estimate if estimation fails (vault might already exist)
+            console.warn('Gas estimation failed, returning default:', error);
+            return 150000n; // Default estimate for vault creation
+        }
+    }
+
+    getFactoryAddress(): string | undefined {
+        return this.config.contracts.vaultFactory;
+    }
+
+    getImplementationAddress(): string | undefined {
+        return this.config.contracts.vaultImplementation ?? this.cachedImplementation ?? undefined;
+    }
+
+    /**
+     * Fetch implementation address from factory contract
+     */
+    async fetchImplementationAddress(): Promise<string | null> {
+        if (this.cachedImplementation) {
+            return this.cachedImplementation;
+        }
+
+        if (!this.factoryContract) {
+            return null;
+        }
+
+        try {
+            this.cachedImplementation = await this.factoryContract.implementation();
+            return this.cachedImplementation;
+        } catch (error) {
+            console.error('Error fetching implementation address:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get the provider instance
+     */
+    getProvider(): ethers.JsonRpcProvider {
+        return this.provider;
+    }
+
+    // ========================================================================
+    // Balance Methods (Phase 2)
+    // ========================================================================
+
+    /**
+     * Get native token balance for an address
+     */
+    async getNativeBalance(address: string): Promise<bigint> {
+        return await this.provider.getBalance(address);
+    }
+
+    /**
+     * Get ERC20 token balance for an address
+     */
+    async getTokenBalance(tokenAddress: string, ownerAddress: string): Promise<bigint> {
+        const contract = new ethers.Contract(tokenAddress, ERC20_ABI, this.provider);
+        return await contract.balanceOf(ownerAddress);
+    }
+
+    /**
+     * Get token allowance
+     */
+    async getTokenAllowance(
+        tokenAddress: string,
+        ownerAddress: string,
+        spenderAddress: string
+    ): Promise<bigint> {
+        const contract = new ethers.Contract(tokenAddress, ERC20_ABI, this.provider);
+        return await contract.allowance(ownerAddress, spenderAddress);
+    }
+
+    /**
+     * Estimate gas for a dispatch transaction
+     */
+    async estimateDispatchGas(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        targetChain: number,
+        actionPayload: string,
+        nonce: bigint
+    ): Promise<bigint> {
+        const signatureTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        try {
+            const gasEstimate = await this.hubContract.dispatch.estimateGas(
+                signatureTuple,
+                publicKeyX,
+                publicKeyY,
+                targetChain,
+                actionPayload,
+                nonce,
+                { value: messageFee }
+            );
+            return gasEstimate;
+        } catch (error) {
+            console.warn('Gas estimation failed, using default:', error);
+            return 500000n; // Default estimate for dispatch
+        }
+    }
+
+    /**
+     * Get current gas price
+     */
+    async getGasPrice(): Promise<bigint> {
+        const feeData = await this.provider.getFeeData();
+        return feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n;
+    }
+
+    /**
+     * Get current block number
+     */
+    async getBlockNumber(): Promise<number> {
+        return await this.provider.getBlockNumber();
+    }
+
+    /**
+     * Get transaction receipt
+     */
+    async getTransactionReceipt(hash: string): Promise<ethers.TransactionReceipt | null> {
+        return await this.provider.getTransactionReceipt(hash);
+    }
+
+    /**
+     * Wait for transaction confirmation
+     */
+    async waitForTransaction(
+        hash: string,
+        confirmations: number = 1
+    ): Promise<ethers.TransactionReceipt | null> {
+        return await this.provider.waitForTransaction(hash, confirmations);
     }
 }
+

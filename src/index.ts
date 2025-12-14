@@ -17,6 +17,8 @@
  *     rpcUrl: 'https://sepolia.base.org',
  *     hubContractAddress: '0xf189b649ecb44708165f36619ED24ff917eF1f94',
  *     wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
+ *     vaultFactory: '0x...', // Required for vault address computation
+ *     vaultImplementation: '0x...', // Required for vault address computation
  *   }),
  * });
  * 
@@ -24,9 +26,21 @@
  * const credential = await sdk.passkey.register('alice', 'Alice');
  * console.log('Key Hash:', credential.keyHash);
  * 
+ * // Get deterministic vault address (no deployment needed)
+ * const vaultAddress = sdk.getVaultAddress();
+ * console.log('Your vault address:', vaultAddress);
+ * 
+ * // Get unified identity with all chain addresses
+ * const identity = await sdk.getUnifiedIdentity();
+ * console.log('Identity:', identity);
+ * 
  * // Connect wallet for gas payment
  * const provider = new ethers.BrowserProvider(window.ethereum);
  * const signer = await provider.getSigner();
+ * 
+ * // Create vault (or ensure it exists)
+ * const vault = await sdk.ensureVault(signer);
+ * console.log('Vault ready:', vault);
  * 
  * // Transfer tokens cross-chain
  * const result = await sdk.transfer({
@@ -47,6 +61,13 @@
 
 export { VeridexSDK } from './core/VeridexSDK.js';
 export { PasskeyManager } from './core/PasskeyManager.js';
+export { WalletManager } from './core/WalletManager.js';
+export { BalanceManager } from './core/BalanceManager.js';
+export { TransactionTracker, getExplorerUrl, formatTransactionState } from './core/TransactionTracker.js';
+
+// Phase 3: Cross-Chain Exports
+export { CrossChainManager, crossChainManager } from './core/CrossChainManager.js';
+export { RelayerClient, createRelayerClient } from './core/RelayerClient.js';
 
 // ============================================================================
 // Type Exports
@@ -56,6 +77,7 @@ export type {
     // Configuration
     VeridexConfig,
     ChainConfig,
+    WalletManagerConfig,
 
     // Credentials
     PasskeyCredential,
@@ -70,6 +92,11 @@ export type {
     // Results
     DispatchResult,
     VaultInfo,
+    VaultCreationResult,
+
+    // Wallet & Identity
+    UnifiedIdentity,
+    ChainAddress,
 
     // Action Payloads
     TransferAction,
@@ -88,7 +115,80 @@ export type {
 
     // Test Results
     TestResult,
+
+    // Phase 2: Transfer Types
+    PreparedTransfer,
+    TransferResult,
+    ReceiveAddress,
+    TransactionHistoryEntry,
+
+    // Phase 3: Cross-Chain Types
+    CrossChainFees,
+    PreparedBridge,
+    BridgeResult,
 } from './core/types.js';
+
+// Re-export ChainAddressConfig from WalletManager
+export type { ChainAddressConfig } from './core/WalletManager.js';
+
+// Re-export Balance types
+export type { 
+    TokenBalance, 
+    PortfolioBalance, 
+    BalanceManagerConfig 
+} from './core/BalanceManager.js';
+
+// Re-export Transaction Tracker types
+export type { 
+    TransactionStatus, 
+    TransactionState, 
+    TransactionCallback, 
+    TrackerConfig 
+} from './core/TransactionTracker.js';
+
+// Re-export Cross-Chain Manager types
+export type {
+    CrossChainStatus,
+    CrossChainProgress,
+    CrossChainResult,
+    CrossChainConfig,
+    CrossChainProgressCallback,
+} from './core/CrossChainManager.js';
+
+// Re-export Relayer Client types
+export type {
+    RelayStatus,
+    RelayRequest,
+    RelayRoute,
+    RelayerInfo,
+    RelayFeeQuote,
+    RelayerClientConfig,
+} from './core/RelayerClient.js';
+
+// ============================================================================
+// Token Constants
+// ============================================================================
+
+export {
+    NATIVE_TOKEN_ADDRESS,
+    EVM_ZERO_ADDRESS,
+    BASE_SEPOLIA_TOKENS,
+    OPTIMISM_SEPOLIA_TOKENS,
+    ARBITRUM_SEPOLIA_TOKENS,
+    TOKEN_REGISTRY,
+    getTokenList,
+    getAllTokens,
+    getTokenBySymbol,
+    getTokenByAddress,
+    isNativeToken,
+    getSupportedChainIds,
+    getChainName,
+} from './constants/tokens.js';
+
+export type {
+    TokenInfo,
+    ChainTokenList,
+} from './constants/tokens.js';
 
 // ============================================================================
 // Re-export from existing modules (backward compatibility)
@@ -104,3 +204,4 @@ export * from './wormhole.js';
 // ============================================================================
 
 export { VeridexSDK as default } from './core/VeridexSDK.js';
+

@@ -154,6 +154,107 @@ export class PasskeyManager {
         return this.parseAuthenticationResponse(response);
     }
 
+    /**
+     * Authenticate using a discoverable credential (passkey)
+     * This allows sign-in without knowing the credential ID ahead of time.
+     * The authenticator will show all available passkeys for this RP.
+     * 
+     * @param challenge - Optional challenge bytes. If not provided, a random challenge is used.
+     * @returns The credential that was used to authenticate, along with the signature
+     */
+    async authenticate(challenge?: Uint8Array): Promise<{
+        credential: PasskeyCredential;
+        signature: WebAuthnSignature;
+    }> {
+        if (!PasskeyManager.isSupported()) {
+            throw new Error('WebAuthn is not supported in this browser');
+        }
+
+        const actualChallenge = challenge ?? ethers.randomBytes(32);
+        const challengeBase64 = base64URLEncode(actualChallenge);
+
+        // Use discoverable credentials - no allowCredentials means the authenticator
+        // will show all available passkeys for this RP
+        const options: PublicKeyCredentialRequestOptionsJSON = {
+            challenge: challengeBase64,
+            rpId: this.config.rpId,
+            // No allowCredentials = discoverable credential flow
+            userVerification: this.config.userVerification,
+            timeout: this.config.timeout,
+        };
+
+        const response = await startAuthentication(options);
+        
+        // Extract the credential ID that was used
+        const credentialId = response.id;
+        
+        // Parse the signature
+        const signature = this.parseAuthenticationResponse(response);
+        
+        // For discoverable credentials, we need to recover the public key from the response
+        // or require it to be stored. Since WebAuthn doesn't return the public key on auth,
+        // we need to check if we have it stored, or use a different approach.
+        
+        // Try to load from localStorage first (might have been stored during registration)
+        const storedCredential = this.loadCredentialById(credentialId);
+        
+        if (storedCredential) {
+            this.credential = storedCredential;
+            return { credential: storedCredential, signature };
+        }
+        
+        // If we don't have the public key stored, we need to throw an error
+        // because we can't derive the keyHash without the public key
+        // In a production app, you'd want to store credentials server-side
+        throw new Error(
+            'Credential not found in local storage. ' +
+            'This passkey was registered on a different device or the data was cleared. ' +
+            'Please register a new passkey.'
+        );
+    }
+
+    /**
+     * Load a credential by its ID from localStorage
+     * Used for discoverable credential authentication
+     */
+    private loadCredentialById(credentialId: string, key = 'veridex_credential'): PasskeyCredential | null {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+
+        const stored = localStorage.getItem(key);
+        if (!stored) {
+            return null;
+        }
+
+        try {
+            const data = JSON.parse(stored);
+            // Check if this is the right credential
+            if (data.credentialId === credentialId) {
+                return {
+                    credentialId: data.credentialId,
+                    publicKeyX: BigInt(data.publicKeyX),
+                    publicKeyY: BigInt(data.publicKeyY),
+                    keyHash: data.keyHash,
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('Failed to load credential:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Check if there's a stored credential for this RP
+     */
+    hasStoredCredential(key = 'veridex_credential'): boolean {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+        return localStorage.getItem(key) !== null;
+    }
+
     getCredential(): PasskeyCredential | null {
         return this.credential;
     }
