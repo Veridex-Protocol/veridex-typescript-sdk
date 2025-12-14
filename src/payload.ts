@@ -382,6 +382,51 @@ export function createMessageHash(
 }
 
 /**
+ * Create message hash for gasless dispatch (matches Hub's authenticateRawAndDispatch)
+ * 
+ * The Hub contract expects:
+ * sha256(abi.encodePacked(targetChain, actionPayload, userNonce, hubChainId))
+ * 
+ * @param targetChain - Wormhole chain ID of the destination
+ * @param actionPayload - The action payload (hex string)
+ * @param nonce - User's current nonce
+ * @param hubChainId - Wormhole chain ID of the Hub (e.g., 30 for Base)
+ * @returns The SHA-256 hash as bytes32 hex string
+ */
+export function createGaslessMessageHash(
+  targetChain: number,
+  actionPayload: string,
+  nonce: bigint,
+  hubChainId: number
+): string {
+  const encoded = ethers.solidityPacked(
+    ['uint16', 'bytes', 'uint256', 'uint16'],
+    [targetChain, actionPayload, nonce, hubChainId]
+  );
+  return ethers.sha256(encoded);
+}
+
+/**
+ * Build the challenge bytes for WebAuthn signing (gasless flow)
+ * Uses the same hash that the Hub contract will verify
+ * 
+ * @param targetChain - Wormhole chain ID of the destination
+ * @param actionPayload - The action payload (hex string)
+ * @param nonce - User's current nonce
+ * @param hubChainId - Wormhole chain ID of the Hub
+ * @returns Challenge bytes for WebAuthn signing
+ */
+export function buildGaslessChallenge(
+  targetChain: number,
+  actionPayload: string,
+  nonce: bigint,
+  hubChainId: number
+): Uint8Array {
+  const hash = createGaslessMessageHash(targetChain, actionPayload, nonce, hubChainId);
+  return ethers.getBytes(hash);
+}
+
+/**
  * Build the challenge bytes for WebAuthn signing
  */
 export function buildChallenge(

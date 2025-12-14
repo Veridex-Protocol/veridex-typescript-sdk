@@ -17,6 +17,7 @@ export interface ChainConfig {
   name: string;
   chainId: number;
   wormholeChainId: number;
+  hubChainId?: number; // Wormhole chain ID of the Hub (for cross-chain auth)
   rpcUrl: string;
   explorerUrl: string;
   isEvm: boolean;

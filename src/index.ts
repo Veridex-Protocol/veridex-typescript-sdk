@@ -69,6 +69,9 @@ export { TransactionTracker, getExplorerUrl, formatTransactionState } from './co
 export { CrossChainManager, crossChainManager } from './core/CrossChainManager.js';
 export { RelayerClient, createRelayerClient } from './core/RelayerClient.js';
 
+// Gas Sponsorship (Gasless Vault Creation)
+export { GasSponsor, createGasSponsor } from './core/GasSponsor.js';
+
 // ============================================================================
 // Type Exports
 // ============================================================================
@@ -163,7 +166,18 @@ export type {
     RelayerInfo,
     RelayFeeQuote,
     RelayerClientConfig,
+    SubmitSignedActionRequest,
+    SubmitActionResult,
 } from './core/RelayerClient.js';
+
+// Re-export Gas Sponsor types
+export type {
+    GasSponsorConfig,
+    ChainDeploymentConfig,
+    SponsoredVaultResult,
+    MultiChainVaultResult,
+    SponsorshipSource,
+} from './core/GasSponsor.js';
 
 // ============================================================================
 // Token Constants

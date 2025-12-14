@@ -369,6 +369,85 @@ export class EVMClient implements ChainClient {
         };
     }
 
+    /**
+     * Create a vault with a sponsor wallet paying for gas
+     * 
+     * @param userKeyHash - The user's passkey hash
+     * @param sponsorPrivateKey - Private key of the wallet that will pay gas
+     * @param rpcUrl - Optional RPC URL to use (defaults to client's RPC)
+     * @returns VaultCreationResult with address and transaction details
+     */
+    async createVaultSponsored(
+        userKeyHash: string, 
+        sponsorPrivateKey: string,
+        rpcUrl?: string
+    ): Promise<VaultCreationResult> {
+        // Check if vault already exists
+        const exists = await this.vaultExists(userKeyHash);
+        if (exists) {
+            const address = await this.getVaultAddress(userKeyHash);
+            if (address) {
+                return {
+                    address,
+                    transactionHash: '',
+                    blockNumber: 0,
+                    gasUsed: 0n,
+                    alreadyExisted: true,
+                };
+            }
+        }
+
+        // Create sponsor signer
+        const provider = rpcUrl 
+            ? new ethers.JsonRpcProvider(rpcUrl) 
+            : this.provider;
+        const sponsorWallet = new ethers.Wallet(sponsorPrivateKey, provider);
+
+        // Check sponsor balance
+        const sponsorBalance = await provider.getBalance(sponsorWallet.address);
+        const estimatedGas = await this.estimateVaultCreationGas(userKeyHash);
+        const feeData = await provider.getFeeData();
+        const estimatedCost = estimatedGas * (feeData.gasPrice ?? 1000000000n);
+
+        if (sponsorBalance < estimatedCost) {
+            throw new Error(
+                `Sponsor wallet has insufficient funds. ` +
+                `Balance: ${ethers.formatEther(sponsorBalance)} ETH, ` +
+                `Estimated cost: ${ethers.formatEther(estimatedCost)} ETH`
+            );
+        }
+
+        // Create vault using factory or hub with sponsor wallet
+        let tx: ethers.TransactionResponse;
+        
+        if (this.factoryContract) {
+            const factoryWithSponsor = this.factoryContract.connect(sponsorWallet) as ethers.Contract;
+            tx = await factoryWithSponsor.createVault(userKeyHash);
+        } else {
+            const hubWithSponsor = this.hubContract.connect(sponsorWallet) as ethers.Contract;
+            tx = await hubWithSponsor.createVault(userKeyHash);
+        }
+
+        const receipt = await tx.wait();
+        if (!receipt) {
+            throw new Error('Transaction failed - no receipt');
+        }
+
+        const vaultAddress = await this.getVaultAddress(userKeyHash);
+        if (!vaultAddress) {
+            throw new Error('Failed to create vault - address not found after creation');
+        }
+
+        return {
+            address: vaultAddress,
+            transactionHash: receipt.hash,
+            blockNumber: receipt.blockNumber,
+            gasUsed: receipt.gasUsed,
+            alreadyExisted: false,
+            sponsoredBy: sponsorWallet.address,
+        };
+    }
+
     async estimateVaultCreationGas(userKeyHash: string): Promise<bigint> {
         try {
             if (this.factoryContract) {

@@ -13,9 +13,17 @@ export interface VeridexConfig {
     chain: ChainClient;
 
     /**
-     * Optional relayer URL for automated VAA submission
+     * Relayer URL for:
+     * 1. Automated VAA submission
+     * 2. Remote gas sponsorship (primary method for vault creation)
+     * When available, this takes priority over local wallet sponsorship
      */
     relayerUrl?: string;
+
+    /**
+     * API key for relayer service authentication
+     */
+    relayerApiKey?: string;
 
     /**
      * Whether to use testnet or mainnet
@@ -26,6 +34,26 @@ export interface VeridexConfig {
      * Whether to persist wallet data to localStorage
      */
     persistWallet?: boolean;
+
+    /**
+     * Veridex sponsor wallet private key for gasless vault creation (fallback)
+     * When set, vault creation is sponsored (user doesn't pay gas)
+     * This is the fallback when relayer is not available
+     */
+    sponsorPrivateKey?: string;
+
+    /**
+     * Integrator-provided sponsor key for platforms using Veridex SDK
+     * Takes priority over Veridex default sponsorship
+     * Allows platforms to pay for their users' vault creation
+     */
+    integratorSponsorKey?: string;
+
+    /**
+     * Additional chain RPC URLs for multi-chain sponsored vault creation
+     * Maps Wormhole chain ID to RPC URL
+     */
+    chainRpcUrls?: Record<number, string>;
 }
 
 export interface WalletManagerConfig {
@@ -191,6 +219,8 @@ export interface VaultCreationResult {
     gasUsed: bigint;
     /** Whether this was a new deployment or already existed */
     alreadyExisted: boolean;
+    /** Address of the sponsor wallet if gas was sponsored */
+    sponsoredBy?: string;
 }
 
 // ============================================================================
@@ -336,6 +366,18 @@ export interface ChainClient {
      * Create a vault for a user
      */
     createVault(userKeyHash: string, signer: any): Promise<VaultCreationResult>;
+
+    /**
+     * Create a vault with a sponsor wallet paying for gas
+     * @param userKeyHash - The user's passkey hash
+     * @param sponsorPrivateKey - Private key of the wallet that will pay gas
+     * @param rpcUrl - Optional RPC URL to use
+     */
+    createVaultSponsored?(
+        userKeyHash: string, 
+        sponsorPrivateKey: string,
+        rpcUrl?: string
+    ): Promise<VaultCreationResult>;
 
     /**
      * Estimate gas for vault creation

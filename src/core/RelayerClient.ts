@@ -94,6 +94,44 @@ export interface RelayerInfo {
 }
 
 /**
+ * Request body for submitting a signed action to the relayer (gasless)
+ */
+export interface SubmitSignedActionRequest {
+    /** SHA-256 hash of the message that was signed */
+    messageHash: string;
+    /** P-256 signature r component (hex) */
+    r: string;
+    /** P-256 signature s component (hex) */
+    s: string;
+    /** P-256 public key X coordinate (hex) */
+    publicKeyX: string;
+    /** P-256 public key Y coordinate (hex) */
+    publicKeyY: string;
+    /** Target chain Wormhole ID */
+    targetChain: number;
+    /** Action payload (hex) */
+    actionPayload: string;
+    /** User nonce */
+    nonce: number;
+}
+
+/**
+ * Response from submitting a signed action
+ */
+export interface SubmitActionResult {
+    /** Whether the submission was successful */
+    success: boolean;
+    /** Transaction hash on Hub chain */
+    txHash?: string;
+    /** Wormhole sequence number */
+    sequence?: string;
+    /** Error message if failed */
+    error?: string;
+    /** Human-readable message */
+    message?: string;
+}
+
+/**
  * Fee quote for a relay
  */
 export interface RelayFeeQuote {
@@ -181,6 +219,31 @@ export class RelayerClient {
         });
 
         return this.parseRelayRequest(response);
+    }
+
+    /**
+     * Submit a signed action to the relayer for gasless execution
+     * 
+     * This allows users to execute transfers without paying gas themselves.
+     * The relayer will submit the transaction to the Hub chain and pay the gas.
+     * The relayer then automatically relays the VAA to the destination spoke chain.
+     * 
+     * @param request - The signed action request with passkey signature
+     * @returns Result including Hub tx hash and Wormhole sequence
+     */
+    async submitSignedAction(request: SubmitSignedActionRequest): Promise<SubmitActionResult> {
+        const response = await this.fetch('/api/v1/submit', {
+            method: 'POST',
+            body: JSON.stringify(request),
+        });
+
+        return {
+            success: response.success,
+            txHash: response.txHash,
+            sequence: response.sequence,
+            error: response.error,
+            message: response.message,
+        };
     }
 
     /**

@@ -14,8 +14,15 @@ import {
     type CrossChainFees,
     type CrossChainProgressCallback,
 } from './CrossChainManager.js';
-import { RelayerClient, type RelayerClientConfig } from './RelayerClient.js';
-import { buildChallenge } from '../payload.js';
+import { RelayerClient, type RelayerClientConfig, type SubmitSignedActionRequest, type SubmitActionResult } from './RelayerClient.js';
+import { 
+    GasSponsor, 
+    type GasSponsorConfig, 
+    type SponsoredVaultResult, 
+    type MultiChainVaultResult,
+    type ChainDeploymentConfig,
+} from './GasSponsor.js';
+import { buildChallenge, buildGaslessChallenge, createGaslessMessageHash } from '../payload.js';
 import { normalizeEmitterAddress } from '../wormhole.js';
 import { 
     getTokenList, 
@@ -52,16 +59,21 @@ export class VeridexSDK {
     public readonly balance: BalanceManager;
     public readonly transactions: TransactionTracker;
     public readonly crossChain: CrossChainManager;
+    public readonly sponsor: GasSponsor;
     private readonly chain: ChainClient;
     private readonly relayerUrl?: string;
     private readonly relayer?: RelayerClient;
     private readonly testnet: boolean;
+    private readonly sponsorPrivateKey?: string;
+    private readonly chainRpcUrls?: Record<number, string>;
     private unifiedIdentity: UnifiedIdentity | null = null;
 
     constructor(config: VeridexConfig) {
         this.chain = config.chain;
         this.relayerUrl = config.relayerUrl;
         this.testnet = config.testnet ?? true;
+        this.sponsorPrivateKey = config.sponsorPrivateKey;
+        this.chainRpcUrls = config.chainRpcUrls;
         this.passkey = new PasskeyManager();
         this.wallet = new WalletManager({
             cacheAddresses: true,
@@ -79,6 +91,18 @@ export class VeridexSDK {
             testnet: this.testnet,
             relayerUrl: config.relayerUrl,
             autoRelay: !!config.relayerUrl,
+        });
+        this.sponsor = new GasSponsor({
+            // Veridex fallback sponsorship
+            sponsorPrivateKey: config.sponsorPrivateKey,
+            // Integrator-provided sponsorship (takes priority over Veridex)
+            integratorSponsorKey: config.integratorSponsorKey,
+            // Relayer for remote sponsorship (future primary method)
+            relayerUrl: config.relayerUrl,
+            relayerApiKey: config.relayerApiKey,
+            // Chain configuration
+            testnet: this.testnet,
+            customRpcUrls: config.chainRpcUrls,
         });
 
         // Initialize relayer client if URL provided
@@ -688,6 +712,102 @@ export class VeridexSDK {
     }
 
     /**
+     * Execute a gasless transfer using the relayer
+     * 
+     * This method allows users to send funds without paying gas themselves.
+     * The relayer service submits the transaction to the Hub and pays the gas.
+     * The relayer then automatically relays the VAA to the destination spoke chain.
+     * 
+     * @param params - Transfer parameters (to, amount, token, targetChain)
+     * @param onStatusChange - Optional callback for transaction status updates
+     * @returns TransferResult with Hub tx hash and tracking info
+     */
+    async transferViaRelayer(
+        params: TransferParams,
+        onStatusChange?: TransactionCallback
+    ): Promise<TransferResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+        }
+
+        // Ensure relayer is available
+        if (!this.relayer) {
+            throw new Error('Relayer not configured. Please provide relayerUrl in SDK config.');
+        }
+
+        // Build the action payload
+        const actionPayload = await this.buildTransferPayload(params);
+        const nonce = await this.getNonce();
+        
+        // Get hub chain ID from config
+        const chainConfig = this.chain.getConfig();
+        const hubChainId = chainConfig.hubChainId ?? chainConfig.wormholeChainId;
+
+        // Build the challenge that matches what the Hub contract will verify
+        // Hub uses: sha256(abi.encodePacked(targetChain, actionPayload, userNonce, hubChainId))
+        const challenge = buildGaslessChallenge(
+            params.targetChain,
+            actionPayload,
+            nonce,
+            hubChainId
+        );
+
+        // Sign with passkey (user authenticates with Face ID, Touch ID, etc.)
+        const signature = await this.passkey.sign(challenge);
+
+        // Create the message hash (hex string) for the relayer
+        const messageHash = createGaslessMessageHash(
+            params.targetChain,
+            actionPayload,
+            nonce,
+            hubChainId
+        );
+
+        // Submit to relayer for gasless execution
+        const submitRequest: SubmitSignedActionRequest = {
+            messageHash,
+            r: '0x' + signature.r.toString(16).padStart(64, '0'),
+            s: '0x' + signature.s.toString(16).padStart(64, '0'),
+            publicKeyX: '0x' + credential.publicKeyX.toString(16).padStart(64, '0'),
+            publicKeyY: '0x' + credential.publicKeyY.toString(16).padStart(64, '0'),
+            targetChain: params.targetChain,
+            actionPayload,
+            nonce: Number(nonce),
+        };
+
+        const relayerResult = await this.relayer.submitSignedAction(submitRequest);
+
+        if (!relayerResult.success) {
+            throw new Error(`Relayer submission failed: ${relayerResult.error}`);
+        }
+
+        // Track the Hub transaction
+        if (relayerResult.txHash) {
+            this.transactions.track(
+                relayerResult.txHash,
+                hubChainId,
+                onStatusChange,
+                relayerResult.sequence ? BigInt(relayerResult.sequence) : undefined
+            );
+        }
+
+        // Invalidate balance cache for sender
+        const vaultAddress = this.getVaultAddress();
+        this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
+
+        return {
+            transactionHash: relayerResult.txHash ?? '',
+            sequence: relayerResult.sequence ? BigInt(relayerResult.sequence) : 0n,
+            userKeyHash: credential.keyHash,
+            targetChain: params.targetChain,
+            blockNumber: 0, // Hub tx block number not returned by relayer
+            params,
+            timestamp: Date.now(),
+        };
+    }
+
+    /**
      * Wait for a transaction to confirm
      * 
      * @param hash - Transaction hash
@@ -1095,6 +1215,108 @@ export class VeridexSDK {
     }
 
     /**
+     * Create a vault with sponsored gas (Veridex pays for gas)
+     * 
+     * Uses the sponsor wallet configured in SDK initialization.
+     * If no sponsor is configured, throws an error.
+     * 
+     * @param wormholeChainId - Optional chain ID for multi-chain creation
+     * @returns VaultCreationResult with address and transaction details
+     */
+    async createVaultSponsored(wormholeChainId?: number): Promise<VaultCreationResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        if (!this.sponsorPrivateKey) {
+            throw new Error('No sponsor wallet configured. Set sponsorPrivateKey in SDK config.');
+        }
+
+        // Check if chain client supports sponsored creation
+        if (!this.chain.createVaultSponsored) {
+            throw new Error('Current chain client does not support sponsored vault creation');
+        }
+
+        // Get the appropriate RPC URL for the chain
+        const chainConfig = this.chain.getConfig();
+        const targetChainId = wormholeChainId ?? chainConfig.wormholeChainId;
+        const rpcUrl = this.chainRpcUrls?.[targetChainId] ?? chainConfig.rpcUrl;
+
+        const result = await this.chain.createVaultSponsored(
+            credential.keyHash,
+            this.sponsorPrivateKey,
+            rpcUrl
+        );
+
+        // Update cached identity if available
+        if (this.unifiedIdentity) {
+            const address = this.unifiedIdentity.addresses.find(
+                a => a.wormholeChainId === targetChainId
+            );
+
+            if (address) {
+                address.deployed = true;
+                address.deploymentTxHash = result.transactionHash;
+            } else {
+                this.unifiedIdentity.addresses.push({
+                    wormholeChainId: targetChainId,
+                    chainName: chainConfig.name,
+                    address: result.address,
+                    isEvm: chainConfig.isEvm,
+                    deployed: true,
+                    deploymentTxHash: result.transactionHash,
+                    derivationType: 'create2',
+                });
+            }
+
+            this.unifiedIdentity.updatedAt = Date.now();
+        }
+
+        return result;
+    }
+
+    /**
+     * Check if sponsored vault creation is available
+     */
+    hasSponsoredVaultCreation(): boolean {
+        return !!this.sponsorPrivateKey && !!this.chain.createVaultSponsored;
+    }
+
+    /**
+     * Ensure vault exists, creating with sponsor if available
+     * Falls back to requiring a signer if no sponsor configured
+     * 
+     * @param signer - Optional signer (only required if no sponsor configured)
+     * @returns The vault address
+     */
+    async ensureVaultAuto(signer?: any): Promise<string> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        const exists = await this.chain.vaultExists(credential.keyHash);
+        if (exists) {
+            return this.getVaultAddress();
+        }
+
+        // Try sponsored creation first
+        if (this.hasSponsoredVaultCreation()) {
+            const result = await this.createVaultSponsored();
+            return result.address;
+        }
+
+        // Fall back to signer-based creation
+        if (!signer) {
+            throw new Error('No sponsor configured and no signer provided for vault creation');
+        }
+
+        const result = await this.createVault(signer);
+        return result.address;
+    }
+
+    /**
      * Ensure vault exists, creating if necessary
      * 
      * @param signer - The signer to pay for gas (only used if creation needed)
@@ -1134,6 +1356,203 @@ export class VeridexSDK {
         }
 
         return await this.chain.vaultExists(credential.keyHash);
+    }
+
+    // ========================================================================
+    // Sponsored Vault Creation (Gasless)
+    // ========================================================================
+
+    /**
+     * Check if gas sponsorship is configured
+     * 
+     * @returns true if a sponsor is configured (relayer, integrator, or Veridex)
+     */
+    isSponsorshipAvailable(): boolean {
+        return this.sponsor.isConfigured();
+    }
+
+    /**
+     * Get the active sponsorship source
+     * 
+     * Priority order:
+     * 1. 'relayer' - Remote relayer service (future primary)
+     * 2. 'integrator' - Platform-provided sponsor key
+     * 3. 'veridex' - Veridex default sponsor (fallback)
+     * 4. 'none' - No sponsorship available
+     * 
+     * @returns The active sponsorship source
+     */
+    getSponsorshipSource(): 'relayer' | 'integrator' | 'veridex' | 'none' {
+        return this.sponsor.getSponsorshipSource();
+    }
+
+    /**
+     * Get supported chains for sponsored vault creation
+     * 
+     * @returns Array of chain configurations
+     */
+    getSponsoredChains(): ChainDeploymentConfig[] {
+        return this.sponsor.getSupportedChains();
+    }
+
+    /**
+     * Create a vault on a specific chain using gas sponsorship
+     * User doesn't need to pay gas - Veridex pays
+     * 
+     * @param wormholeChainId - The Wormhole chain ID to create vault on
+     * @returns Result with vault address
+     */
+    async createSponsoredVault(wormholeChainId: number): Promise<SponsoredVaultResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+        }
+
+        if (!this.sponsor.isConfigured()) {
+            throw new Error('Gas sponsorship not configured. Set sponsorPrivateKey in SDK config.');
+        }
+
+        const result = await this.sponsor.createVaultOnChain(credential.keyHash, wormholeChainId);
+
+        // Update cached identity if successful
+        if (result.success && result.vaultAddress && this.unifiedIdentity) {
+            const existingAddress = this.unifiedIdentity.addresses.find(
+                a => a.wormholeChainId === wormholeChainId
+            );
+
+            if (existingAddress) {
+                existingAddress.deployed = true;
+                existingAddress.deploymentTxHash = result.transactionHash;
+                existingAddress.address = result.vaultAddress;
+            } else {
+                this.unifiedIdentity.addresses.push({
+                    wormholeChainId,
+                    chainName: result.chain,
+                    address: result.vaultAddress,
+                    isEvm: true,
+                    deployed: true,
+                    deploymentTxHash: result.transactionHash,
+                    derivationType: 'create2',
+                });
+            }
+
+            this.unifiedIdentity.updatedAt = Date.now();
+        }
+
+        return result;
+    }
+
+    /**
+     * Create vaults on all supported chains using gas sponsorship
+     * User doesn't need to pay gas - Veridex pays
+     * 
+     * @returns Multi-chain result with all vault addresses
+     */
+    async createSponsoredVaultsOnAllChains(): Promise<MultiChainVaultResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+        }
+
+        if (!this.sponsor.isConfigured()) {
+            throw new Error('Gas sponsorship not configured. Set sponsorPrivateKey in SDK config.');
+        }
+
+        const result = await this.sponsor.createVaultsOnAllChains(credential.keyHash);
+
+        // Update cached identity with all successful vaults
+        if (this.unifiedIdentity) {
+            for (const vaultResult of result.results) {
+                if (vaultResult.success && vaultResult.vaultAddress) {
+                    const existingAddress = this.unifiedIdentity.addresses.find(
+                        a => a.wormholeChainId === vaultResult.wormholeChainId
+                    );
+
+                    if (existingAddress) {
+                        existingAddress.deployed = true;
+                        existingAddress.deploymentTxHash = vaultResult.transactionHash;
+                        existingAddress.address = vaultResult.vaultAddress;
+                    } else {
+                        this.unifiedIdentity.addresses.push({
+                            wormholeChainId: vaultResult.wormholeChainId,
+                            chainName: vaultResult.chain,
+                            address: vaultResult.vaultAddress,
+                            isEvm: true,
+                            deployed: true,
+                            deploymentTxHash: vaultResult.transactionHash,
+                            derivationType: 'create2',
+                        });
+                    }
+                }
+            }
+
+            this.unifiedIdentity.updatedAt = Date.now();
+        }
+
+        return result;
+    }
+
+    /**
+     * Check if vaults exist on all supported chains
+     * 
+     * @returns Map of chain ID to vault status
+     */
+    async checkVaultsOnAllChains(): Promise<Record<number, { exists: boolean; address: string }>> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        return await this.sponsor.checkVaultsOnAllChains(credential.keyHash);
+    }
+
+    /**
+     * Ensure vaults exist on all chains, creating if necessary (sponsored)
+     * 
+     * @returns Result with all vault addresses
+     */
+    async ensureSponsoredVaultsOnAllChains(): Promise<MultiChainVaultResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        // First check which vaults exist
+        const existing = await this.checkVaultsOnAllChains();
+        
+        // Find chains that need vault creation
+        const supportedChains = this.sponsor.getSupportedChains();
+        const needsCreation = supportedChains.filter(
+            chain => !existing[chain.wormholeChainId]?.exists
+        );
+
+        if (needsCreation.length === 0) {
+            // All vaults exist
+            const vaultAddresses: Record<number, string> = {};
+            const results: SponsoredVaultResult[] = [];
+
+            for (const chain of supportedChains) {
+                const status = existing[chain.wormholeChainId];
+                vaultAddresses[chain.wormholeChainId] = status?.address || '';
+                results.push({
+                    success: true,
+                    chain: chain.name,
+                    wormholeChainId: chain.wormholeChainId,
+                    vaultAddress: status?.address,
+                    alreadyExists: true,
+                });
+            }
+
+            return {
+                keyHash: credential.keyHash,
+                results,
+                allSuccessful: true,
+                vaultAddresses,
+            };
+        }
+
+        // Create missing vaults
+        return await this.createSponsoredVaultsOnAllChains();
     }
 
     getCredential(): PasskeyCredential | null {
