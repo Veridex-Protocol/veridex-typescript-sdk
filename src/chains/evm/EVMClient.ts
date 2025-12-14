@@ -244,6 +244,76 @@ export class EVMClient implements ChainClient {
         };
     }
 
+    /**
+     * Dispatch an action to the Hub via relayer (gasless)
+     * The relayer pays for gas and submits the transaction on behalf of the user
+     */
+    async dispatchGasless(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        targetChain: number,
+        actionPayload: string,
+        nonce: bigint,
+        relayerUrl: string
+    ): Promise<DispatchResult> {
+        // Compute message hash that was signed
+        // This should match how the WebAuthn signature was generated
+        const keyHash = ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                ['uint256', 'uint256'],
+                [publicKeyX, publicKeyY]
+            )
+        );
+
+        // Build the message that was signed
+        const message = ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                ['bytes32', 'uint16', 'bytes', 'uint256'],
+                [keyHash, targetChain, actionPayload, nonce]
+            )
+        );
+
+        // Prepare request for relayer
+        const request = {
+            messageHash: message,
+            r: '0x' + signature.r.toString(16).padStart(64, '0'),
+            s: '0x' + signature.s.toString(16).padStart(64, '0'),
+            publicKeyX: '0x' + publicKeyX.toString(16).padStart(64, '0'),
+            publicKeyY: '0x' + publicKeyY.toString(16).padStart(64, '0'),
+            targetChain,
+            actionPayload,
+            nonce: Number(nonce),
+        };
+
+        // Submit to relayer
+        const response = await fetch(`${relayerUrl}/api/v1/submit`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(request),
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: response.statusText }));
+            throw new Error(`Relayer submission failed: ${error.error || response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(`Relayer submission failed: ${result.error}`);
+        }
+
+        return {
+            transactionHash: result.txHash,
+            sequence: BigInt(result.sequence || '0'),
+            userKeyHash: keyHash,
+            targetChain,
+        };
+    }
+
     async getVaultAddress(userKeyHash: string): Promise<string | null> {
         try {
             // Try factory first if available
@@ -341,7 +411,7 @@ export class EVMClient implements ChainClient {
 
         // Create vault using factory or hub
         let tx: ethers.TransactionResponse;
-        
+
         if (this.factoryContract) {
             const factoryWithSigner = this.factoryContract.connect(signer) as ethers.Contract;
             tx = await factoryWithSigner.createVault(userKeyHash);
@@ -378,7 +448,7 @@ export class EVMClient implements ChainClient {
      * @returns VaultCreationResult with address and transaction details
      */
     async createVaultSponsored(
-        userKeyHash: string, 
+        userKeyHash: string,
         sponsorPrivateKey: string,
         rpcUrl?: string
     ): Promise<VaultCreationResult> {
@@ -398,8 +468,8 @@ export class EVMClient implements ChainClient {
         }
 
         // Create sponsor signer
-        const provider = rpcUrl 
-            ? new ethers.JsonRpcProvider(rpcUrl) 
+        const provider = rpcUrl
+            ? new ethers.JsonRpcProvider(rpcUrl)
             : this.provider;
         const sponsorWallet = new ethers.Wallet(sponsorPrivateKey, provider);
 
@@ -419,7 +489,7 @@ export class EVMClient implements ChainClient {
 
         // Create vault using factory or hub with sponsor wallet
         let tx: ethers.TransactionResponse;
-        
+
         if (this.factoryContract) {
             const factoryWithSponsor = this.factoryContract.connect(sponsorWallet) as ethers.Contract;
             tx = await factoryWithSponsor.createVault(userKeyHash);

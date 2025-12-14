@@ -347,6 +347,27 @@ export interface ChainClient {
     ): Promise<DispatchResult>;
 
     /**
+     * Dispatch an action to the Hub via relayer (gasless)
+     * The relayer pays for gas and submits the transaction on behalf of the user
+     * @param signature - WebAuthn signature
+     * @param publicKeyX - P-256 public key X coordinate
+     * @param publicKeyY - P-256 public key Y coordinate
+     * @param targetChain - Target chain Wormhole ID
+     * @param actionPayload - Encoded action payload
+     * @param nonce - User nonce
+     * @param relayerUrl - URL of the relayer service
+     */
+    dispatchGasless?(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        targetChain: number,
+        actionPayload: string,
+        nonce: bigint,
+        relayerUrl: string
+    ): Promise<DispatchResult>;
+
+    /**
      * Get vault address for a user (may query on-chain registry)
      */
     getVaultAddress(userKeyHash: string): Promise<string | null>;
