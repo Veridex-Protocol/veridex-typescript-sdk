@@ -44,6 +44,8 @@ export interface PasskeyManagerConfig {
     timeout?: number;
     userVerification?: 'required' | 'preferred' | 'discouraged';
     authenticatorAttachment?: 'platform' | 'cross-platform';
+    /** Relayer API URL for cross-device credential recovery */
+    relayerUrl?: string;
 }
 
 // ============================================================================
@@ -64,6 +66,7 @@ export class PasskeyManager {
             timeout: config.timeout ?? 60000,
             userVerification: config.userVerification ?? 'required',
             authenticatorAttachment: config.authenticatorAttachment ?? 'platform',
+            relayerUrl: config.relayerUrl ?? '',
         };
     }
 
@@ -196,20 +199,30 @@ export class PasskeyManager {
         // we need to check if we have it stored, or use a different approach.
         
         // Try to load from localStorage first (might have been stored during registration)
-        const storedCredential = this.loadCredentialById(credentialId);
+        let storedCredential = this.loadCredentialById(credentialId);
         
         if (storedCredential) {
             this.credential = storedCredential;
             return { credential: storedCredential, signature };
         }
         
-        // If we don't have the public key stored, we need to throw an error
+        // If not in localStorage, try to fetch from relayer (cross-device recovery)
+        if (this.config.relayerUrl) {
+            storedCredential = await this.loadCredentialFromRelayer(credentialId);
+            if (storedCredential) {
+                this.credential = storedCredential;
+                // Cache locally for future use
+                this.saveToLocalStorage();
+                return { credential: storedCredential, signature };
+            }
+        }
+        
+        // If we don't have the public key stored anywhere, we need to throw an error
         // because we can't derive the keyHash without the public key
-        // In a production app, you'd want to store credentials server-side
         throw new Error(
-            'Credential not found in local storage. ' +
+            'Credential not found. ' +
             'This passkey was registered on a different device or the data was cleared. ' +
-            'Please register a new passkey.'
+            'Please register a new passkey or ensure the relayer URL is configured.'
         );
     }
 
@@ -328,6 +341,119 @@ export class PasskeyManager {
     removeFromLocalStorage(key = 'veridex_credential'): void {
         if (typeof window !== 'undefined') {
             localStorage.removeItem(key);
+        }
+    }
+
+    // =========================================================================
+    // Relayer-based Credential Storage (Cross-Device Recovery)
+    // =========================================================================
+
+    /**
+     * Save the current credential to the relayer for cross-device recovery.
+     * This should be called after registration.
+     */
+    async saveCredentialToRelayer(): Promise<boolean> {
+        if (!this.credential) {
+            throw new Error('No credential to save');
+        }
+        if (!this.config.relayerUrl) {
+            console.warn('Relayer URL not configured; skipping remote credential storage');
+            return false;
+        }
+
+        try {
+            const response = await fetch(`${this.config.relayerUrl}/api/v1/credential`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    keyHash: this.credential.keyHash,
+                    credentialId: this.credential.credentialId,
+                    publicKeyX: this.credential.publicKeyX.toString(),
+                    publicKeyY: this.credential.publicKeyY.toString(),
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Failed to save credential to relayer:', errorData);
+                return false;
+            }
+
+            console.log('Credential saved to relayer for cross-device recovery');
+            return true;
+        } catch (error) {
+            console.error('Failed to save credential to relayer:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Load a credential from the relayer by credential ID.
+     * Used during discoverable credential authentication when localStorage is empty.
+     */
+    async loadCredentialFromRelayer(credentialId: string): Promise<PasskeyCredential | null> {
+        if (!this.config.relayerUrl) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(
+                `${this.config.relayerUrl}/api/v1/credential/by-id/${encodeURIComponent(credentialId)}`
+            );
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const data = await response.json();
+            if (!data.exists) {
+                return null;
+            }
+
+            return {
+                credentialId: data.credentialId,
+                publicKeyX: BigInt(data.publicKeyX),
+                publicKeyY: BigInt(data.publicKeyY),
+                keyHash: data.keyHash,
+            };
+        } catch (error) {
+            console.error('Failed to load credential from relayer:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Load a credential from the relayer by keyHash.
+     * Useful when you know the user's keyHash but not their credential ID.
+     */
+    async loadCredentialFromRelayerByKeyHash(keyHash: string): Promise<PasskeyCredential | null> {
+        if (!this.config.relayerUrl) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(
+                `${this.config.relayerUrl}/api/v1/credential/${encodeURIComponent(keyHash)}`
+            );
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const data = await response.json();
+            if (!data.exists) {
+                return null;
+            }
+
+            return {
+                credentialId: data.credentialId,
+                publicKeyX: BigInt(data.publicKeyX),
+                publicKeyY: BigInt(data.publicKeyY),
+                keyHash: data.keyHash,
+            };
+        } catch (error) {
+            console.error('Failed to load credential from relayer:', error);
+            return null;
         }
     }
 

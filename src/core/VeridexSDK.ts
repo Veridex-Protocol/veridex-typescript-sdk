@@ -77,7 +77,9 @@ export class VeridexSDK {
         this.chainRpcUrls = config.chainRpcUrls;
         this.relayerApiKey = config.relayerApiKey;
         this.queryApiKey = config.queryApiKey ?? config.relayerApiKey;
-        this.passkey = new PasskeyManager();
+        this.passkey = new PasskeyManager({
+            relayerUrl: config.relayerUrl,
+        });
         this.wallet = new WalletManager({
             cacheAddresses: true,
             persistToStorage: config.persistWallet ?? true,
