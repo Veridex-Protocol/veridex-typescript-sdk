@@ -954,9 +954,9 @@ export class VeridexSDK {
                     evmTokenAddresses: { [wormholeChainId]: erc20Tokens },
                     rpcUrls: { [wormholeChainId]: chainConfig.rpcUrl },
                     maxAge: 60,
-                    // Use shorter timeout for balance queries - fall back to RPC faster
-                    timeout: 5000,
-                    maxAttempts: 2,
+                    // Testnet Query Proxy can be slow; use a more forgiving timeout.
+                    timeout: this.testnet ? 15_000 : 10_000,
+                    maxAttempts: this.testnet ? 3 : 2,
                 });
 
                 const chain = result.chains.find((c) => c.wormholeChainId === wormholeChainId);

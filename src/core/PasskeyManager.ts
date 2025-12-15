@@ -699,6 +699,15 @@ export class PasskeyManager {
 
         const { r, s } = parseDERSignature(signature);
 
+        // Normalize signature to low-S form.
+        // The on-chain WebAuthn verifier rejects signatures with s > n/2.
+        // WebAuthn authenticators are not guaranteed to produce low-S signatures,
+        // so without this normalization, valid signatures can intermittently fail.
+        const P256_N = BigInt('0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551');
+        const P256_N_DIV_2 = BigInt(
+            '0x7FFFFFFF800000007FFFFFFFFFFFFFFFDE737D56D38BCF4279DCE5617E3192A8'
+        );
+
         const clientDataStr = new TextDecoder().decode(base64URLDecode(clientDataJSON));
         const challengeIndex = clientDataStr.indexOf('"challenge"');
         const typeIndex = clientDataStr.indexOf('"type"');
@@ -713,7 +722,10 @@ export class PasskeyManager {
             challengeIndex,
             typeIndex,
             r: this.bytesToBigInt(r),
-            s: this.bytesToBigInt(s),
+            s: (() => {
+                const sBig = this.bytesToBigInt(s);
+                return sBig > P256_N_DIV_2 ? P256_N - sBig : sBig;
+            })(),
         };
     }
 }
