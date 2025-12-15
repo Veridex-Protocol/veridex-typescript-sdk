@@ -322,7 +322,7 @@ export class BalanceManager {
         provider: ethers.JsonRpcProvider,
         address: string,
         tokenAddress: string,
-        tokenInfo: TokenInfo
+        _tokenInfo: TokenInfo
     ): Promise<bigint> {
         if (isNativeToken(tokenAddress)) {
             return await provider.getBalance(address);

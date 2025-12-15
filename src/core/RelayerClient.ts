@@ -206,19 +206,16 @@ export class RelayerClient {
         sequence: bigint,
         feeQuoteId?: string
     ): Promise<RelayRequest> {
-        const response = await this.fetch('/api/v1/relay', {
-            method: 'POST',
-            body: JSON.stringify({
-                vaa: vaaBase64,
-                sourceChain,
-                destinationChain,
-                sourceTxHash,
-                sequence: sequence.toString(),
-                feeQuoteId,
-            }),
-        });
-
-        return this.parseRelayRequest(response);
+        void vaaBase64;
+        void sourceChain;
+        void destinationChain;
+        void sourceTxHash;
+        void sequence;
+        void feeQuoteId;
+        throw new Error(
+            'submitRelay() is not supported by the current Veridex relayer API. ' +
+            'Use submitSignedAction() and let the relayer observe hub events to relay automatically.'
+        );
     }
 
     /**
@@ -239,7 +236,7 @@ export class RelayerClient {
 
         return {
             success: response.success,
-            txHash: response.txHash,
+            txHash: response.transactionHash ?? response.txHash,
             sequence: response.sequence,
             error: response.error,
             message: response.message,
@@ -250,23 +247,16 @@ export class RelayerClient {
      * Get relay request status
      */
     async getRelayStatus(requestId: string): Promise<RelayRequest> {
-        const response = await this.fetch(`/api/v1/relay/${requestId}`);
-        return this.parseRelayRequest(response);
+        void requestId;
+        throw new Error('getRelayStatus() is not supported by the current Veridex relayer API.');
     }
 
     /**
      * Get relay status by source transaction hash
      */
     async getRelayBySourceTx(sourceTxHash: string): Promise<RelayRequest | null> {
-        try {
-            const response = await this.fetch(`/api/v1/relay/tx/${sourceTxHash}`);
-            return this.parseRelayRequest(response);
-        } catch (error: any) {
-            if (error.status === 404) {
-                return null;
-            }
-            throw error;
-        }
+        void sourceTxHash;
+        return null;
     }
 
     /**
@@ -276,31 +266,17 @@ export class RelayerClient {
         sourceChain: number,
         sequence: bigint
     ): Promise<RelayRequest | null> {
-        try {
-            const response = await this.fetch(
-                `/api/v1/relay/sequence/${sourceChain}/${sequence.toString()}`
-            );
-            return this.parseRelayRequest(response);
-        } catch (error: any) {
-            if (error.status === 404) {
-                return null;
-            }
-            throw error;
-        }
+        void sourceChain;
+        void sequence;
+        return null;
     }
 
     /**
      * Cancel a pending relay request
      */
     async cancelRelay(requestId: string): Promise<boolean> {
-        try {
-            await this.fetch(`/api/v1/relay/${requestId}`, {
-                method: 'DELETE',
-            });
-            return true;
-        } catch {
-            return false;
-        }
+        void requestId;
+        return false;
     }
 
     /**
@@ -312,25 +288,11 @@ export class RelayerClient {
         pollingIntervalMs: number = 3_000,
         onProgress?: (status: RelayStatus) => void
     ): Promise<RelayRequest> {
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < timeoutMs) {
-            const request = await this.getRelayStatus(requestId);
-
-            onProgress?.(request.status);
-
-            if (request.status === 'confirmed') {
-                return request;
-            }
-
-            if (request.status === 'failed') {
-                throw new Error(`Relay failed: ${request.error}`);
-            }
-
-            await this.sleep(pollingIntervalMs);
-        }
-
-        throw new Error('Relay timeout: Request did not complete in time');
+        void requestId;
+        void timeoutMs;
+        void pollingIntervalMs;
+        void onProgress;
+        throw new Error('waitForRelay() is not supported by the current Veridex relayer API.');
     }
 
     // ========================================================================
@@ -345,25 +307,23 @@ export class RelayerClient {
         destinationChain: number,
         estimatedGas?: bigint
     ): Promise<RelayFeeQuote> {
-        const params = new URLSearchParams({
-            sourceChain: sourceChain.toString(),
-            destinationChain: destinationChain.toString(),
-        });
+        void sourceChain;
+        void estimatedGas;
 
-        if (estimatedGas !== undefined) {
-            params.set('estimatedGas', estimatedGas.toString());
-        }
-
-        const response = await this.fetch(`/api/v1/fee?${params.toString()}`);
+        // The relayer currently returns a simple fee breakdown; we map it into the
+        // existing RelayFeeQuote shape with best-effort defaults.
+        const response = await this.fetch(`/api/v1/fee?targetChain=${destinationChain}`);
+        const relayerFee = BigInt(response?.fees?.relayer ?? '0');
+        const total = BigInt(response?.fees?.total ?? relayerFee.toString());
 
         return {
-            sourceChain: response.sourceChain,
-            destinationChain: response.destinationChain,
-            feeInSourceToken: BigInt(response.feeInSourceToken || '0'),
-            feeInDestinationToken: BigInt(response.feeInDestinationToken || '0'),
-            estimatedGas: BigInt(response.estimatedGas || '0'),
-            expiresAt: response.expiresAt,
-            quoteId: response.quoteId,
+            sourceChain: sourceChain,
+            destinationChain,
+            feeInSourceToken: total,
+            feeInDestinationToken: relayerFee,
+            estimatedGas: 0n,
+            expiresAt: Date.now() + 60_000,
+            quoteId: '',
         };
     }
 
@@ -378,12 +338,12 @@ export class RelayerClient {
         const response = await this.fetch('/api/v1/info');
 
         return {
-            name: response.name,
-            version: response.version,
-            supportedChains: response.supportedChains || [],
-            routes: (response.routes || []).map(this.parseRoute),
-            online: response.online ?? true,
-            queueDepth: response.queueDepth ?? 0,
+            name: 'veridex-relayer',
+            version: response?.relayer?.version ?? response?.version ?? 'unknown',
+            supportedChains: (response?.supportedChains || []).map((c: any) => c.wormholeChainId ?? c),
+            routes: [],
+            online: true,
+            queueDepth: 0,
         };
     }
 
@@ -391,8 +351,7 @@ export class RelayerClient {
      * Get supported routes
      */
     async getRoutes(): Promise<RelayRoute[]> {
-        const response = await this.fetch('/api/v1/routes');
-        return (response.routes || []).map(this.parseRoute);
+        throw new Error('getRoutes() is not supported by the current Veridex relayer API.');
     }
 
     /**
@@ -402,12 +361,9 @@ export class RelayerClient {
         sourceChain: number,
         destinationChain: number
     ): Promise<boolean> {
-        const routes = await this.getRoutes();
-        return routes.some(
-            r => r.sourceChain === sourceChain &&
-                 r.destinationChain === destinationChain &&
-                 r.active
-        );
+        void sourceChain;
+        void destinationChain;
+        return false;
     }
 
     /**
@@ -416,7 +372,7 @@ export class RelayerClient {
     async healthCheck(): Promise<boolean> {
         try {
             const response = await this.fetch('/health');
-            return response.status === 'ok' || response.healthy === true;
+            return response.status === 'healthy' || response.status === 'degraded' || response.healthy === true;
         } catch {
             return false;
         }
@@ -430,8 +386,8 @@ export class RelayerClient {
      * Get all pending relay requests for a user
      */
     async getPendingRelays(userKeyHash: string): Promise<RelayRequest[]> {
-        const response = await this.fetch(`/api/v1/relay/pending/${userKeyHash}`);
-        return (response.requests || []).map(this.parseRelayRequest.bind(this));
+        void userKeyHash;
+        return [];
     }
 
     /**
@@ -442,15 +398,10 @@ export class RelayerClient {
         limit: number = 50,
         offset: number = 0
     ): Promise<RelayRequest[]> {
-        const params = new URLSearchParams({
-            limit: limit.toString(),
-            offset: offset.toString(),
-        });
-
-        const response = await this.fetch(
-            `/api/v1/relay/history/${userKeyHash}?${params.toString()}`
-        );
-        return (response.requests || []).map(this.parseRelayRequest.bind(this));
+        void userKeyHash;
+        void limit;
+        void offset;
+        return [];
     }
 
     // ========================================================================
@@ -523,41 +474,6 @@ export class RelayerClient {
         }
 
         throw lastError || new Error('Request failed after all retries');
-    }
-
-    /**
-     * Parse relay request response
-     */
-    private parseRelayRequest(data: any): RelayRequest {
-        return {
-            id: data.id,
-            sequence: BigInt(data.sequence || '0'),
-            sourceChain: data.sourceChain,
-            destinationChain: data.destinationChain,
-            status: data.status as RelayStatus,
-            sourceTxHash: data.sourceTxHash,
-            destinationTxHash: data.destinationTxHash,
-            createdAt: data.createdAt || Date.now(),
-            updatedAt: data.updatedAt || Date.now(),
-            error: data.error,
-            gasUsed: data.gasUsed ? BigInt(data.gasUsed) : undefined,
-            feePaid: data.feePaid ? BigInt(data.feePaid) : undefined,
-        };
-    }
-
-    /**
-     * Parse route response
-     */
-    private parseRoute(data: any): RelayRoute {
-        return {
-            sourceChain: data.sourceChain,
-            destinationChain: data.destinationChain,
-            active: data.active ?? true,
-            estimatedTimeSeconds: data.estimatedTimeSeconds ?? 60,
-            baseFee: BigInt(data.baseFee || '0'),
-            gasPrice: BigInt(data.gasPrice || '0'),
-            maxGas: BigInt(data.maxGas || '500000'),
-        };
     }
 
     /**

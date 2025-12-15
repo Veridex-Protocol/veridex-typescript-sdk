@@ -18,7 +18,6 @@ import {
     getSequenceFromTxReceipt,
     waitForGuardianSignatures,
     normalizeEmitterAddress,
-    CONSISTENCY_LEVELS,
     GUARDIAN_CONFIG,
 } from '../wormhole.js';
 import type {
@@ -245,22 +244,31 @@ export class CrossChainManager {
      */
     private async fetchRelayerFee(
         destinationChain: number,
-        sourceChain: number
+        _sourceChain: number
     ): Promise<bigint> {
         if (!this.config.relayerUrl) {
             return 0n;
         }
 
+        // The current Veridex relayer exposes a simplified fee endpoint.
+        // Source chain is accepted here for future-proofing but not required by the API today.
         const response = await fetch(
-            `${this.config.relayerUrl}/api/v1/fee?from=${sourceChain}&to=${destinationChain}`
+            `${this.config.relayerUrl}/api/v1/fee?targetChain=${destinationChain}`
         );
 
         if (!response.ok) {
             throw new Error('Failed to fetch relayer fee');
         }
 
-        const data = await response.json() as { fee?: string };
-        return BigInt(data.fee ?? '0');
+        const data = await response.json() as {
+            fees?: {
+                wormhole?: string;
+                relayer?: string;
+                total?: string;
+            };
+        };
+
+        return BigInt(data.fees?.relayer ?? '0');
     }
 
     // ========================================================================
@@ -534,7 +542,7 @@ export class CrossChainManager {
      */
     getExplorerUrl(
         txHash: string,
-        chain: 'source' | 'destination',
+        _chain: 'source' | 'destination',
         explorerBaseUrl: string
     ): string {
         return `${explorerBaseUrl}/tx/${txHash}`;

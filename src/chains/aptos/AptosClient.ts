@@ -4,7 +4,7 @@
  * Implementation of ChainClient interface for Aptos blockchain
  */
 
-import { AptosClient as AptosSDK, AptosAccount, Types } from 'aptos';
+import { AptosClient as AptosSDK, Types } from 'aptos';
 import { createHash } from 'crypto';
 import type {
     ChainClient,
@@ -35,11 +35,6 @@ export interface AptosClientConfig {
 // Constants
 // ============================================================================
 
-// Action type constants (must match on-chain module)
-const ACTION_TRANSFER = 1;
-const ACTION_BRIDGE = 4;
-const ACTION_CONFIG = 3;
-
 // ============================================================================
 // AptosClient Class
 // ============================================================================
@@ -51,8 +46,6 @@ export class AptosClient implements ChainClient {
     private config: ChainConfig;
     private client: AptosSDK;
     private moduleAddress: string;
-    private wormholeBridge: string;
-    private tokenBridge: string;
 
     constructor(config: AptosClientConfig) {
         this.config = {
@@ -73,8 +66,6 @@ export class AptosClient implements ChainClient {
 
         this.client = new AptosSDK(config.rpcUrl);
         this.moduleAddress = config.moduleAddress;
-        this.wormholeBridge = config.wormholeCoreBridge;
-        this.tokenBridge = config.tokenBridge;
     }
 
     getConfig(): ChainConfig {
@@ -149,6 +140,13 @@ export class AptosClient implements ChainClient {
         nonce: bigint,
         signer: any // Aptos AptosAccount
     ): Promise<DispatchResult> {
+        void signature;
+        void publicKeyX;
+        void publicKeyY;
+        void targetChain;
+        void actionPayload;
+        void nonce;
+        void signer;
         throw new Error(
             'Direct dispatch not supported on Aptos spoke chains. ' +
             'Actions must be dispatched from the Hub (EVM) chain. ' +
@@ -265,6 +263,8 @@ export class AptosClient implements ChainClient {
     }
 
     async createVault(userKeyHash: string, signer: any): Promise<VaultCreationResult> {
+        void userKeyHash;
+        void signer;
         throw new Error(
             'Vault creation on Aptos must be done via cross-chain message from Hub. ' +
             'Use the Hub chain client to dispatch a vault creation action targeting Aptos.'
@@ -276,6 +276,9 @@ export class AptosClient implements ChainClient {
         sponsorPrivateKey: string,
         rpcUrl?: string
     ): Promise<VaultCreationResult> {
+        void userKeyHash;
+        void sponsorPrivateKey;
+        void rpcUrl;
         throw new Error(
             'Vault creation on Aptos must be done via cross-chain message from Hub. ' +
             'Use relayer gasless submission to create vault.'
@@ -283,6 +286,7 @@ export class AptosClient implements ChainClient {
     }
 
     async estimateVaultCreationGas(userKeyHash: string): Promise<bigint> {
+        void userKeyHash;
         // Return APT estimate for vault creation
         // ~0.001 APT for account creation + gas
         return 100_000n; // 0.001 APT in octas (1 APT = 100M octas)

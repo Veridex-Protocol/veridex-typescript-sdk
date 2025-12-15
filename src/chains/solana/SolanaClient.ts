@@ -7,14 +7,8 @@
 import {
     Connection,
     PublicKey,
-    SystemProgram,
-    Transaction,
-    TransactionInstruction,
-    ComputeBudgetProgram,
 } from '@solana/web3.js';
 import {
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
     getAssociatedTokenAddressSync,
 } from '@solana/spl-token';
 import { createHash } from 'crypto';
@@ -48,34 +42,6 @@ export interface SolanaClientConfig {
 // Constants
 // ============================================================================
 
-// Action type constants (must match on-chain program)
-const ACTION_TRANSFER = 1;
-const ACTION_BRIDGE = 4;
-const ACTION_CONFIG = 3;
-
-/**
- * Generate Anchor instruction discriminator
- * Anchor uses the first 8 bytes of sha256("global:<instruction_name>")
- */
-function getAnchorDiscriminator(instructionName: string): Buffer {
-    const hash = createHash('sha256')
-        .update(`global:${instructionName}`)
-        .digest();
-    return Buffer.from(hash.subarray(0, 8));
-}
-
-// Anchor discriminators for Veridex Spoke instructions
-const SOLANA_DISCRIMINATORS = {
-    initialize: getAnchorDiscriminator('initialize'),
-    createVault: getAnchorDiscriminator('create_vault'),
-    executeTransfer: getAnchorDiscriminator('execute_transfer'),
-    executeSolTransfer: getAnchorDiscriminator('execute_sol_transfer'),
-    updateVaultConfig: getAnchorDiscriminator('update_vault_config'),
-    executeBridge: getAnchorDiscriminator('execute_bridge'),
-    completeBridgeTransfer: getAnchorDiscriminator('complete_bridge_transfer'),
-    updateConfig: getAnchorDiscriminator('update_config'),
-};
-
 // ============================================================================
 // SolanaClient Class
 // ============================================================================
@@ -87,8 +53,6 @@ export class SolanaClient implements ChainClient {
     private config: ChainConfig;
     private connection: Connection;
     private programId: PublicKey;
-    private wormholeBridge: PublicKey;
-    private tokenBridge: PublicKey;
 
     constructor(config: SolanaClientConfig) {
         this.config = {
@@ -112,8 +76,6 @@ export class SolanaClient implements ChainClient {
             config.commitment || 'confirmed'
         );
         this.programId = new PublicKey(config.programId);
-        this.wormholeBridge = new PublicKey(config.wormholeCoreBridge);
-        this.tokenBridge = new PublicKey(config.tokenBridge);
     }
 
     getConfig(): ChainConfig {
@@ -185,6 +147,13 @@ export class SolanaClient implements ChainClient {
         nonce: bigint,
         signer: any // Solana Keypair or similar
     ): Promise<DispatchResult> {
+        void signature;
+        void publicKeyX;
+        void publicKeyY;
+        void targetChain;
+        void actionPayload;
+        void nonce;
+        void signer;
         throw new Error(
             'Direct dispatch not supported on Solana spoke chains. ' +
             'Actions must be dispatched from the Hub (EVM) chain. ' +
@@ -291,6 +260,8 @@ export class SolanaClient implements ChainClient {
     }
 
     async createVault(userKeyHash: string, signer: any): Promise<VaultCreationResult> {
+        void userKeyHash;
+        void signer;
         throw new Error(
             'Vault creation on Solana must be done via cross-chain message from Hub. ' +
             'Use the Hub chain client to dispatch a vault creation action targeting Solana.'
@@ -302,6 +273,9 @@ export class SolanaClient implements ChainClient {
         sponsorPrivateKey: string,
         rpcUrl?: string
     ): Promise<VaultCreationResult> {
+        void userKeyHash;
+        void sponsorPrivateKey;
+        void rpcUrl;
         throw new Error(
             'Vault creation on Solana must be done via cross-chain message from Hub. ' +
             'Use relayer gasless submission to create vault.'
@@ -309,6 +283,7 @@ export class SolanaClient implements ChainClient {
     }
 
     async estimateVaultCreationGas(userKeyHash: string): Promise<bigint> {
+        void userKeyHash;
         // Return SOL estimate for vault creation (rent + compute)
         // ~0.002 SOL for rent-exempt account + compute units
         return 2_000_000n; // 0.002 SOL in lamports

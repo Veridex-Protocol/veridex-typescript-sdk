@@ -76,6 +76,8 @@ export interface WalletManagerConfig {
 export interface ChainConfig {
     name: string;
     chainId: number;
+    /** Wormhole chain ID of the hub chain (if different from wormholeChainId) */
+    hubChainId?: number;
     wormholeChainId: number;
     rpcUrl: string;
     explorerUrl: string;

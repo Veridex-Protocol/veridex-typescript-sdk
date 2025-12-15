@@ -521,25 +521,6 @@ export class GasSponsor {
     }
 
     /**
-     * @deprecated Use createVaultViaRelayer instead
-     */
-    private async createVaultViaApi(
-        keyHash: string,
-        chain: ChainDeploymentConfig
-    ): Promise<SponsoredVaultResult> {
-        const apiUrl = this.config.sponsorApiUrl || this.config.relayerUrl;
-        if (!apiUrl) {
-            return {
-                success: false,
-                chain: chain.name,
-                wormholeChainId: chain.wormholeChainId,
-                error: 'No sponsor API URL configured',
-            };
-        }
-        return this.createVaultViaRelayer(keyHash, chain, apiUrl);
-    }
-
-    /**
      * Create vaults on all supported chains (sponsored)
      */
     async createVaultsOnAllChains(keyHash: string): Promise<MultiChainVaultResult> {

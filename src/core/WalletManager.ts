@@ -8,7 +8,6 @@
 
 import { ethers } from 'ethers';
 import type { 
-    ChainConfig, 
     PasskeyCredential,
     UnifiedIdentity,
     ChainAddress,
@@ -242,7 +241,7 @@ export class WalletManager {
     private deriveNonEvmAddress(
         credential: PasskeyCredential,
         wormholeChainId: number,
-        config: ChainAddressConfig
+        _config: ChainAddressConfig
     ): ChainAddress | null {
         switch (wormholeChainId) {
             case 1: // Solana

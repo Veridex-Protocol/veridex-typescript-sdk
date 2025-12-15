@@ -3,21 +3,18 @@
  */
 
 import { PasskeyManager } from './PasskeyManager.js';
-import { WalletManager, type ChainAddressConfig } from './WalletManager.js';
+import { WalletManager } from './WalletManager.js';
 import { BalanceManager, type TokenBalance, type PortfolioBalance } from './BalanceManager.js';
 import { TransactionTracker, type TransactionState, type TransactionCallback } from './TransactionTracker.js';
 import { 
     CrossChainManager, 
-    type CrossChainConfig, 
-    type CrossChainProgress, 
     type CrossChainResult,
     type CrossChainFees,
     type CrossChainProgressCallback,
 } from './CrossChainManager.js';
-import { RelayerClient, type RelayerClientConfig, type SubmitSignedActionRequest, type SubmitActionResult } from './RelayerClient.js';
+import { RelayerClient, type SubmitSignedActionRequest } from './RelayerClient.js';
 import { 
     GasSponsor, 
-    type GasSponsorConfig, 
     type SponsoredVaultResult, 
     type MultiChainVaultResult,
     type ChainDeploymentConfig,
@@ -25,7 +22,6 @@ import {
 import { buildChallenge, buildGaslessChallenge, createGaslessMessageHash } from '../payload.js';
 import { normalizeEmitterAddress } from '../wormhole.js';
 import { 
-    getTokenList, 
     getAllTokens, 
     getTokenBySymbol, 
     isNativeToken,
@@ -61,7 +57,6 @@ export class VeridexSDK {
     public readonly crossChain: CrossChainManager;
     public readonly sponsor: GasSponsor;
     private readonly chain: ChainClient;
-    private readonly relayerUrl?: string;
     private readonly relayer?: RelayerClient;
     private readonly testnet: boolean;
     private readonly sponsorPrivateKey?: string;
@@ -70,7 +65,6 @@ export class VeridexSDK {
 
     constructor(config: VeridexConfig) {
         this.chain = config.chain;
-        this.relayerUrl = config.relayerUrl;
         this.testnet = config.testnet ?? true;
         this.sponsorPrivateKey = config.sponsorPrivateKey;
         this.chainRpcUrls = config.chainRpcUrls;
@@ -360,7 +354,7 @@ export class VeridexSDK {
         });
 
         // Track the cross-chain transfer
-        const crossChainResult = this.crossChain.trackTransfer(
+        this.crossChain.trackTransfer(
             dispatchResult.transactionHash,
             prepared.sourceChain,
             prepared.destinationChain,
@@ -395,35 +389,16 @@ export class VeridexSDK {
         }
 
         // Step 6: Submit to relayer (if configured)
+        // The relayer auto-relays by observing hub Dispatch events; there is
+        // currently no relay-job API to poll for destination tx hashes.
         let destinationTxHash: string | undefined;
         if (vaa && this.relayer) {
             onProgress?.({
                 status: 'relaying',
                 step: 6,
                 totalSteps: 6,
-                message: 'Relaying to destination chain...',
+                message: 'Relayer will submit to destination chain automatically...',
             });
-
-            try {
-                const relayRequest = await this.relayer.submitRelay(
-                    vaa,
-                    prepared.sourceChain,
-                    prepared.destinationChain,
-                    dispatchResult.transactionHash,
-                    dispatchResult.sequence
-                );
-
-                // Wait for relay completion
-                const completedRelay = await this.relayer.waitForRelay(
-                    relayRequest.id,
-                    60_000, // 1 minute timeout
-                    3_000
-                );
-
-                destinationTxHash = completedRelay.destinationTxHash;
-            } catch (error) {
-                console.warn('Relay failed:', error);
-            }
         }
 
         onProgress?.({
@@ -450,6 +425,128 @@ export class VeridexSDK {
             destinationChain: prepared.destinationChain,
             vaa,
             destinationTxHash,
+            duration: Date.now() - startTime,
+            timestamp: Date.now(),
+        };
+    }
+
+    /**
+     * Execute a gasless bridge using the relayer
+     *
+     * The relayer pays for the Hub transaction (and Wormhole fee), then observes
+     * the resulting Dispatch event and relays the VAA to the destination spoke.
+     */
+    async bridgeViaRelayer(
+        params: BridgeParams,
+        onProgress?: CrossChainProgressCallback
+    ): Promise<BridgeResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+        }
+
+        if (!this.relayer) {
+            throw new Error('Relayer not configured. Please provide relayerUrl in SDK config.');
+        }
+
+        const startTime = Date.now();
+
+        onProgress?.({
+            status: 'preparing',
+            step: 0,
+            totalSteps: 6,
+            message: 'Preparing gasless bridge...',
+        });
+
+        // Bridge actions target the *sourceChain* (where the vault holds funds)
+        const actionPayload = await this.buildBridgePayload(params);
+        const nonce = await this.getNonce();
+        const chainConfig = this.chain.getConfig();
+        const hubChainId = chainConfig.hubChainId ?? chainConfig.wormholeChainId;
+
+        onProgress?.({
+            status: 'signing',
+            step: 1,
+            totalSteps: 6,
+            message: 'Sign with your passkey...',
+        });
+
+        const challenge = buildGaslessChallenge(
+            params.sourceChain,
+            actionPayload,
+            nonce,
+            hubChainId
+        );
+        const signature = await this.passkey.sign(challenge);
+
+        const messageHash = createGaslessMessageHash(
+            params.sourceChain,
+            actionPayload,
+            nonce,
+            hubChainId
+        );
+
+        onProgress?.({
+            status: 'dispatching',
+            step: 2,
+            totalSteps: 6,
+            message: 'Submitting gasless bridge to relayer...',
+        });
+
+        const submitRequest: SubmitSignedActionRequest = {
+            messageHash,
+            r: '0x' + signature.r.toString(16).padStart(64, '0'),
+            s: '0x' + signature.s.toString(16).padStart(64, '0'),
+            publicKeyX: '0x' + credential.publicKeyX.toString(16).padStart(64, '0'),
+            publicKeyY: '0x' + credential.publicKeyY.toString(16).padStart(64, '0'),
+            targetChain: params.sourceChain,
+            actionPayload,
+            nonce: Number(nonce),
+        };
+
+        const relayerResult = await this.relayer.submitSignedAction(submitRequest);
+        if (!relayerResult.success) {
+            throw new Error(`Relayer submission failed: ${relayerResult.error}`);
+        }
+
+        const txHash = relayerResult.txHash ?? '';
+        const sequence = relayerResult.sequence ? BigInt(relayerResult.sequence) : 0n;
+
+        if (txHash) {
+            this.transactions.track(txHash, hubChainId, undefined, sequence || undefined);
+        }
+
+        // Try to fetch VAA for UI feedback (relayer will still execute even if this fails)
+        let vaa: string | undefined;
+        try {
+            vaa = await this.crossChain.fetchVAAByTxHash(txHash, onProgress);
+        } catch {
+            // ignore: user can retry fetch later
+        }
+
+        onProgress?.({
+            status: 'completed',
+            step: 6,
+            totalSteps: 6,
+            message: 'Gasless bridge submitted. Relayer will complete execution.',
+            details: {
+                txHash,
+                sequence,
+                vaaReady: !!vaa,
+            },
+        });
+
+        return {
+            transactionHash: txHash,
+            sequence,
+            userKeyHash: credential.keyHash,
+            targetChain: params.sourceChain,
+            blockNumber: 0,
+            params,
+            sourceChain: params.sourceChain,
+            destinationChain: params.destinationChain,
+            vaa,
+            destinationTxHash: undefined,
             duration: Date.now() - startTime,
             timestamp: Date.now(),
         };
