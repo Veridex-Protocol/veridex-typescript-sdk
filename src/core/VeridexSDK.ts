@@ -23,7 +23,7 @@ import {
     type MultiChainVaultResult,
     type ChainDeploymentConfig,
 } from './GasSponsor.js';
-import { buildChallenge, buildGaslessChallenge, createGaslessMessageHash } from '../payload.js';
+import { buildChallenge, buildGaslessChallenge } from '../payload.js';
 import { normalizeEmitterAddress } from '../wormhole.js';
 import { 
     getAllTokens, 
@@ -495,13 +495,6 @@ export class VeridexSDK {
         );
         const signature = await this.passkey.sign(challenge);
 
-        const messageHash = createGaslessMessageHash(
-            params.sourceChain,
-            actionPayload,
-            nonce,
-            hubChainId
-        );
-
         onProgress?.({
             status: 'dispatching',
             step: 2,
@@ -509,8 +502,12 @@ export class VeridexSDK {
             message: 'Submitting gasless bridge to relayer...',
         });
 
+        // Use full WebAuthn data for authenticateAndDispatch
         const submitRequest: SubmitSignedActionRequest = {
-            messageHash,
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
             r: '0x' + signature.r.toString(16).padStart(64, '0'),
             s: '0x' + signature.s.toString(16).padStart(64, '0'),
             publicKeyX: '0x' + credential.publicKeyX.toString(16).padStart(64, '0'),
@@ -957,6 +954,9 @@ export class VeridexSDK {
                     evmTokenAddresses: { [wormholeChainId]: erc20Tokens },
                     rpcUrls: { [wormholeChainId]: chainConfig.rpcUrl },
                     maxAge: 60,
+                    // Use shorter timeout for balance queries - fall back to RPC faster
+                    timeout: 5000,
+                    maxAttempts: 2,
                 });
 
                 const chain = result.chains.find((c) => c.wormholeChainId === wormholeChainId);

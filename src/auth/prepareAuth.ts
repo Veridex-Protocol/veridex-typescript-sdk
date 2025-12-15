@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import type { PasskeyCredential, TransferParams, ExecuteParams, BridgeParams } from '../core/types.js';
 import { PasskeyManager } from '../core/PasskeyManager.js';
 import { MAINNET_CHAINS, TESTNET_CHAINS } from '../constants.js';
-import { buildGaslessChallenge, createGaslessMessageHash, encodeBridgeAction, encodeExecuteAction, encodeTransferAction } from '../payload.js';
+import { buildGaslessChallenge, encodeBridgeAction, encodeExecuteAction, encodeTransferAction } from '../payload.js';
 import { queryHubState } from '../queries/hubState.js';
 
 export type AuthenticateAndPrepareParams = {
@@ -161,11 +161,13 @@ export async function authenticateAndPrepare(
   passkey.setCredential(userParams.credential);
   const signature = await passkey.sign(challenge);
 
-  const messageHash = createGaslessMessageHash(userParams.targetChain, actionPayload, nonce, hubChainId);
-
   // Relayer request body (matches packages/relayer POST /api/v1/submit requirements)
+  // Uses full WebAuthn data for authenticateAndDispatch
   const requestBody: any = {
-    messageHash,
+    authenticatorData: signature.authenticatorData,
+    clientDataJSON: signature.clientDataJSON,
+    challengeIndex: signature.challengeIndex,
+    typeIndex: signature.typeIndex,
     r: toHex32(signature.r),
     s: toHex32(signature.s),
     publicKeyX: toHex32(userParams.credential.publicKeyX),

@@ -159,11 +159,13 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     name: 'Base Sepolia',
     chainId: 84532,
     wormholeChainId: 10004,
-    rpcUrl: 'https://sepolia.base.org',
+    rpcUrl: 'https://sepolia.base.org', // Public CORS-friendly RPC
     explorerUrl: 'https://sepolia.basescan.org',
     isEvm: true,
     contracts: {
       hub: '0xf189b649ecb44708165f36619ED24ff917eF1f94',
+      vaultFactory: '0x0E4B53AbCE029Df2a1e0068F16C5A35A6a8D85b6',
+      vaultImplementation: '0x755F4d7191fC8A3e832E9f8b30c7ab6543F943f3',
       wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
     },
   },

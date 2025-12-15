@@ -95,10 +95,17 @@ export interface RelayerInfo {
 
 /**
  * Request body for submitting a signed action to the relayer (gasless)
+ * Uses full WebAuthn data for authenticateAndDispatch
  */
 export interface SubmitSignedActionRequest {
-    /** SHA-256 hash of the message that was signed */
-    messageHash: string;
+    /** WebAuthn authenticatorData (hex) */
+    authenticatorData: string;
+    /** WebAuthn clientDataJSON (raw string) */
+    clientDataJSON: string;
+    /** Index of "challenge":"..." in clientDataJSON */
+    challengeIndex: number;
+    /** Index of "type":"..." in clientDataJSON */
+    typeIndex: number;
     /** P-256 signature r component (hex) */
     r: string;
     /** P-256 signature s component (hex) */
@@ -229,18 +236,31 @@ export class RelayerClient {
      * @returns Result including Hub tx hash and Wormhole sequence
      */
     async submitSignedAction(request: SubmitSignedActionRequest): Promise<SubmitActionResult> {
-        const response = await this.fetch('/api/v1/submit', {
-            method: 'POST',
-            body: JSON.stringify(request),
-        });
+        try {
+            const response = await this.fetch('/api/v1/submit', {
+                method: 'POST',
+                body: JSON.stringify(request),
+            });
 
-        return {
-            success: response.success,
-            txHash: response.transactionHash ?? response.txHash,
-            sequence: response.sequence,
-            error: response.error,
-            message: response.message,
-        };
+            return {
+                success: response.success,
+                txHash: response.transactionHash ?? response.txHash,
+                sequence: response.sequence,
+                error: response.error,
+                message: response.message,
+            };
+        } catch (err: any) {
+            // Handle 400 errors gracefully - the relayer returns error details in the body
+            if (err.status === 400 && err.body) {
+                return {
+                    success: false,
+                    error: err.body.error ?? 'Relayer returned 400 Bad Request',
+                    message: err.body.message,
+                };
+            }
+            // Re-throw other errors
+            throw err;
+        }
     }
 
     /**

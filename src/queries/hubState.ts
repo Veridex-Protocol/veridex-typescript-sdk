@@ -318,7 +318,8 @@ export async function queryHubState(
         new PerChainQueryRequest(wormholeChainId, new EthCallQueryRequest(blockTag, callData)),
       ]);
 
-      const requestHex = `0x${Buffer.from(request.serialize()).toString('hex')}`;
+      // Wormhole Query Proxy expects raw hex WITHOUT 0x prefix
+      const requestHex = Buffer.from(request.serialize()).toString('hex');
 
       const response = await axios.post(
         endpoint,

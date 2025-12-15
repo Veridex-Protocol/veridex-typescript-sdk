@@ -29,6 +29,8 @@ export type QueryPortfolioOptions = {
   maxAttempts?: number;
   /** Cache TTL in ms (default: 30_000). */
   cacheTtlMs?: number;
+  /** Request timeout in ms (default: 15_000 for testnet, 10_000 for mainnet). */
+  timeout?: number;
   /** Override Query Proxy endpoint. */
   endpoint?: string;
   /** Override per-chain RPC URLs used for block tag lookups. */
@@ -78,6 +80,7 @@ export type PortfolioResult = {
 
 export type QueryPortfolioErrorCode =
   | 'INVALID_ARGUMENT'
+  | 'NETWORK_ERROR'
   | 'PROXY_HTTP_ERROR'
   | 'PROXY_RESPONSE_INVALID'
   | 'QUERY_RESPONSE_INVALID';
@@ -172,6 +175,32 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Simple rate limiter for Wormhole Query Proxy (6 requests/second limit).
+ * Queues requests and releases them at the allowed rate.
+ */
+const rateLimiter = {
+  queue: [] as Array<() => void>,
+  lastRequest: 0,
+  minInterval: 170, // ~6 req/s with buffer
+  
+  async acquire(): Promise<void> {
+    return new Promise((resolve) => {
+      const tryAcquire = () => {
+        const now = Date.now();
+        const elapsed = now - rateLimiter.lastRequest;
+        if (elapsed >= rateLimiter.minInterval) {
+          rateLimiter.lastRequest = now;
+          resolve();
+        } else {
+          setTimeout(tryAcquire, rateLimiter.minInterval - elapsed);
+        }
+      };
+      tryAcquire();
+    });
+  }
+};
+
 async function withExponentialBackoff<T>(fn: () => Promise<T>, maxAttempts: number): Promise<T> {
   let attempt = 0;
   let lastError: unknown;
@@ -204,8 +233,8 @@ function getProxyEndpoint(network: QueryPortfolioNetwork, options?: QueryPortfol
 }
 
 function getDefaultPortfolioChains(network: QueryPortfolioNetwork): number[] {
-  // Focus on the current spoke set mentioned in the request.
-  return network === 'testnet' ? [10005, 10003, 1] : [24, 23, 1];
+  // Include hub (Base Sepolia 10004) and spoke chains
+  return network === 'testnet' ? [10004, 10005, 10003, 1] : [30, 24, 23, 1];
 }
 
 function normalizeHex32(hex: string): Uint8Array {
@@ -448,20 +477,73 @@ export async function queryPortfolio(
         );
       }
 
-      const request = new QueryRequest(Date.now() & 0xffffffff, perChainRequests);
-      const requestHex = `0x${Buffer.from(request.serialize()).toString('hex')}`;
+      // If no per-chain requests were built (e.g., missing vaults or tokens), return early with empty results
+      if (perChainRequests.length === 0) {
+        const chainsOut: PortfolioChainResult[] = finalChainIds.map((wormholeChainId) => {
+          const meta = chainMeta[wormholeChainId] ?? { kind: 'unsupported' as const };
+          return {
+            wormholeChainId,
+            chainName: meta.chainName,
+            vaultAddress: meta.vaultAddress,
+            balances: [],
+            error: { 
+              code: 'MISSING_VAULT' as const, 
+              message: 'Unable to build query: missing vault address or no tokens configured' 
+            },
+          };
+        });
+        return { proof: new Uint8Array(), totalUsd: 0, chains: chainsOut };
+      }
 
-      const response = await axios.post(
-        endpoint,
-        { bytes: requestHex },
-        {
-          headers: {
-            'X-API-Key': apiKey,
-            'Content-Type': 'application/json',
-          },
-          timeout: options?.cacheTtlMs ? Math.min(10_000, Math.max(2_000, options.cacheTtlMs)) : 10_000,
+      const request = new QueryRequest(Date.now() & 0xffffffff, perChainRequests);
+      // Wormhole Query Proxy expects raw hex WITHOUT 0x prefix
+      const requestHex = Buffer.from(request.serialize()).toString('hex');
+
+      // Respect rate limit before making request
+      await rateLimiter.acquire();
+
+      let response;
+      try {
+        console.log('[queryPortfolio] Sending request to:', endpoint);
+        console.log('[queryPortfolio] Request bytes length:', requestHex.length);
+        
+        // Use provided timeout, or default to 15s for testnet (slower), 10s for mainnet
+        const defaultTimeout = network === 'testnet' ? 15_000 : 10_000;
+        const requestTimeout = options?.timeout ?? defaultTimeout;
+        
+        response = await axios.post(
+          endpoint,
+          { bytes: requestHex },
+          {
+            headers: {
+              'X-API-Key': apiKey,
+              'Content-Type': 'application/json',
+            },
+            timeout: requestTimeout,
+          }
+        );
+      } catch (axiosErr) {
+        const err = axiosErr as AxiosError;
+        // Network errors (CORS, timeout, no connection) have no response
+        if (!err.response) {
+          console.error('[queryPortfolio] Network error:', {
+            message: err.message,
+            code: err.code,
+            name: err.name,
+          });
+          throw new QueryPortfolioError(
+            'NETWORK_ERROR',
+            `Network error: ${err.message} (code: ${err.code})`
+          );
         }
-      );
+        const status = err.response.status;
+        const errData = err.response.data;
+        console.error('[queryPortfolio] Wormhole Query Proxy error:', { status, data: errData });
+        throw new QueryPortfolioError(
+          'PROXY_RESPONSE_INVALID',
+          `Query Proxy returned ${status}: ${JSON.stringify(errData)}`
+        );
+      }
 
       const data = response.data as any;
       const signatures = data?.signatures as string[] | undefined;
