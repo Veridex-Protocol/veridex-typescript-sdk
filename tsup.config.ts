@@ -8,7 +8,12 @@ export default defineConfig({
         'wormhole': 'src/wormhole.ts',
         'payload': 'src/payload.ts',
         'utils': 'src/utils.ts',
+        'queries/index': 'src/queries/index.ts',
         'chains/evm/index': 'src/chains/evm/index.ts',
+        'chains/solana/index': 'src/chains/solana/index.ts',
+        'chains/aptos/index': 'src/chains/aptos/index.ts',
+        'chains/sui/index': 'src/chains/sui/index.ts',
+        'chains/starknet/index': 'src/chains/starknet/index.ts',
     },
     format: ['cjs', 'esm'],
     dts: {

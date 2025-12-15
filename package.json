@@ -40,6 +40,31 @@
       "import": "./dist/chains/evm/index.mjs",
       "require": "./dist/chains/evm/index.js",
       "types": "./dist/chains/evm/index.d.ts"
+    },
+    "./chains/solana": {
+      "import": "./dist/chains/solana/index.mjs",
+      "require": "./dist/chains/solana/index.js",
+      "types": "./dist/chains/solana/index.d.ts"
+    },
+    "./chains/aptos": {
+      "import": "./dist/chains/aptos/index.mjs",
+      "require": "./dist/chains/aptos/index.js",
+      "types": "./dist/chains/aptos/index.d.ts"
+    },
+    "./chains/sui": {
+      "import": "./dist/chains/sui/index.mjs",
+      "require": "./dist/chains/sui/index.js",
+      "types": "./dist/chains/sui/index.d.ts"
+    },
+    "./chains/starknet": {
+      "import": "./dist/chains/starknet/index.mjs",
+      "require": "./dist/chains/starknet/index.js",
+      "types": "./dist/chains/starknet/index.d.ts"
+    },
+    "./queries": {
+      "import": "./dist/queries/index.mjs",
+      "require": "./dist/queries/index.js",
+      "types": "./dist/queries/index.d.ts"
     }
   },
   "scripts": {
@@ -51,8 +76,15 @@
   },
   "dependencies": {
     "@simplewebauthn/browser": "^9.0.1",
+    "@solana/spl-token": "^0.4.6",
+    "@solana/web3.js": "^1.95.4",
     "@wormhole-foundation/sdk": "^0.10.0",
-    "ethers": "^6.11.1"
+    "@wormhole-foundation/wormhole-query-sdk": "^0.0.14",
+    "axios": "^1.7.9",
+    "aptos": "^1.21.0",
+    "ethers": "^6.11.1",
+    "@mysten/sui": "^1.0.0",
+    "starknet": "^6.12.0"
   },
   "devDependencies": {
     "@simplewebauthn/types": "^9.0.1",

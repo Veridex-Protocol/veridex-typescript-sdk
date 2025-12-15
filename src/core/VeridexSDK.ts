@@ -13,6 +13,8 @@ import {
     type CrossChainProgressCallback,
 } from './CrossChainManager.js';
 import { RelayerClient, type SubmitSignedActionRequest } from './RelayerClient.js';
+import { ChainDetector } from './ChainDetector.js';
+import { ethers } from 'ethers';
 import { 
     GasSponsor, 
     type SponsoredVaultResult, 
@@ -61,6 +63,7 @@ export class VeridexSDK {
     private readonly testnet: boolean;
     private readonly sponsorPrivateKey?: string;
     private readonly chainRpcUrls?: Record<number, string>;
+    private readonly chainDetector: ChainDetector;
     private unifiedIdentity: UnifiedIdentity | null = null;
 
     constructor(config: VeridexConfig) {
@@ -76,10 +79,16 @@ export class VeridexSDK {
         this.balance = new BalanceManager({
             cacheBalances: true,
             cacheTtl: 30_000, // 30 seconds
+            customRpcUrls: config.chainRpcUrls ?? {},
         });
         this.transactions = new TransactionTracker({
             pollingInterval: 2000,
             requiredConfirmations: 1,
+        });
+
+        this.chainDetector = new ChainDetector({
+            testnet: this.testnet,
+            rpcUrls: config.chainRpcUrls ?? {},
         });
         this.crossChain = new CrossChainManager({
             testnet: this.testnet,
@@ -974,10 +983,77 @@ export class VeridexSDK {
             throw new Error('No credential set');
         }
 
-        // For now, use the primary chain's vault address
-        // In a full implementation, each chain would have its own vault address computation
-        const vaultAddress = this.getVaultAddress();
-        return await this.balance.getMultiChainBalances(vaultAddress, chainIds);
+        // Derive an address per chain and query balances accordingly.
+        const results: PortfolioBalance[] = [];
+
+        for (const wormholeChainId of chainIds) {
+            const chainConfig = this.chainDetector.getChainConfig(wormholeChainId);
+
+            // If unknown, skip with a warning.
+            if (!chainConfig) {
+                // eslint-disable-next-line no-console
+                console.warn(`Unknown chainId for balances: ${wormholeChainId}`);
+                continue;
+            }
+
+            // Resolve vault address
+            const derived = this.chainDetector.deriveVaultAddress(credential, wormholeChainId);
+            const address = derived?.address ?? (wormholeChainId === this.chain.getConfig().wormholeChainId
+                ? this.getVaultAddress()
+                : credential.keyHash);
+
+            if (chainConfig.isEvm) {
+                try {
+                    const portfolio = await this.balance.getPortfolioBalance(wormholeChainId, address, false);
+                    results.push(portfolio);
+                } catch (error) {
+                    // eslint-disable-next-line no-console
+                    console.warn(`Failed to fetch EVM balances for chain ${wormholeChainId}:`, error);
+                }
+                continue;
+            }
+
+            // Non-EVM: fetch native balance via chain-specific client
+            try {
+                const client: any = this.chainDetector.createClient(wormholeChainId);
+                if (typeof client.getNativeBalance !== 'function') {
+                    // eslint-disable-next-line no-console
+                    console.warn(`No native balance support for chain ${wormholeChainId}`);
+                    continue;
+                }
+
+                const native = await client.getNativeBalance(address);
+                const meta = this.chainDetector.getNonEvmNativeTokenMeta(wormholeChainId);
+
+                const decimals = meta?.decimals ?? 0;
+                const formatted = decimals > 0 ? ethers.formatUnits(native, decimals) : native.toString();
+
+                results.push({
+                    wormholeChainId,
+                    chainName: chainConfig.name,
+                    address,
+                    tokens: [
+                        {
+                            token: {
+                                symbol: meta?.symbol ?? 'NATIVE',
+                                name: meta?.name ?? 'Native Token',
+                                address: 'native',
+                                decimals,
+                                isNative: true,
+                            },
+                            balance: native,
+                            formatted,
+                        },
+                    ],
+                    lastUpdated: Date.now(),
+                });
+            } catch (error) {
+                // eslint-disable-next-line no-console
+                console.warn(`Failed to fetch non-EVM balances for chain ${wormholeChainId}:`, error);
+            }
+        }
+
+        return results;
     }
 
     /**

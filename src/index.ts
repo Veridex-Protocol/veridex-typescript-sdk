@@ -64,6 +64,7 @@ export { PasskeyManager } from './core/PasskeyManager.js';
 export { WalletManager } from './core/WalletManager.js';
 export { BalanceManager } from './core/BalanceManager.js';
 export { TransactionTracker, getExplorerUrl, formatTransactionState } from './core/TransactionTracker.js';
+export { ChainDetector, createChainDetector } from './core/ChainDetector.js';
 
 // Phase 3: Cross-Chain Exports
 export { CrossChainManager, crossChainManager } from './core/CrossChainManager.js';
@@ -149,6 +150,12 @@ export type {
     TrackerConfig 
 } from './core/TransactionTracker.js';
 
+// Re-export Chain Detector types
+export type {
+    ChainDetectorConfig,
+    NativeBalanceCapable,
+} from './core/ChainDetector.js';
+
 // Re-export Cross-Chain Manager types
 export type {
     CrossChainStatus,
@@ -211,6 +218,7 @@ export type {
 export * from './constants.js';
 export * from './utils.js';
 export * from './payload.js';
+export * from './queries/index.js';
 export * from './wormhole.js';
 
 // ============================================================================
