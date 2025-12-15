@@ -4,6 +4,12 @@ export const WORMHOLE_QUERY_PROXY_URLS = {
 } as const;
 
 /**
+ * Wormhole Query Proxy rate limit: 6 queries per second.
+ * SDK callers should throttle requests accordingly.
+ */
+export const WORMHOLE_QUERY_RATE_LIMIT_PER_SECOND = 6;
+
+/**
  * Convenience set of Wormhole chain IDs commonly supported by Queries.
  * This is not an exhaustive list of all Wormhole chains.
  */

@@ -15,6 +15,8 @@ import {
 import { RelayerClient, type SubmitSignedActionRequest } from './RelayerClient.js';
 import { ChainDetector } from './ChainDetector.js';
 import { ethers } from 'ethers';
+import { authenticateAndPrepare } from '../auth/prepareAuth.js';
+import { queryPortfolio } from '../queries/portfolio.js';
 import { 
     GasSponsor, 
     type SponsoredVaultResult, 
@@ -60,6 +62,8 @@ export class VeridexSDK {
     public readonly sponsor: GasSponsor;
     private readonly chain: ChainClient;
     private readonly relayer?: RelayerClient;
+    private readonly relayerApiKey?: string;
+    private readonly queryApiKey?: string;
     private readonly testnet: boolean;
     private readonly sponsorPrivateKey?: string;
     private readonly chainRpcUrls?: Record<number, string>;
@@ -71,6 +75,8 @@ export class VeridexSDK {
         this.testnet = config.testnet ?? true;
         this.sponsorPrivateKey = config.sponsorPrivateKey;
         this.chainRpcUrls = config.chainRpcUrls;
+        this.relayerApiKey = config.relayerApiKey;
+        this.queryApiKey = config.queryApiKey ?? config.relayerApiKey;
         this.passkey = new PasskeyManager();
         this.wallet = new WalletManager({
             cacheAddresses: true,
@@ -112,6 +118,7 @@ export class VeridexSDK {
         if (config.relayerUrl) {
             this.relayer = new RelayerClient({
                 baseUrl: config.relayerUrl,
+                apiKey: config.relayerApiKey,
             });
         }
     }
@@ -842,45 +849,28 @@ export class VeridexSDK {
             throw new Error('Relayer not configured. Please provide relayerUrl in SDK config.');
         }
 
-        // Build the action payload
-        const actionPayload = await this.buildTransferPayload(params);
-        const nonce = await this.getNonce();
-        
-        // Get hub chain ID from config
         const chainConfig = this.chain.getConfig();
-        const hubChainId = chainConfig.hubChainId ?? chainConfig.wormholeChainId;
 
-        // Build the challenge that matches what the Hub contract will verify
-        // Hub uses: sha256(abi.encodePacked(targetChain, actionPayload, userNonce, hubChainId))
-        const challenge = buildGaslessChallenge(
-            params.targetChain,
-            actionPayload,
-            nonce,
-            hubChainId
+        // Build the action payload (canonical encoding from the active chain client)
+        const actionPayload = await this.buildTransferPayload(params);
+
+        // Client-first preparation:
+        // - fetch Guardian-attested nonce via Wormhole Queries when possible
+        // - fall back to hub RPC nonce lookup
+        // - prompt user to sign once
+        const prepared = await authenticateAndPrepare(
+            {
+                credential,
+                targetChain: params.targetChain,
+                actionPayload,
+            },
+            this.queryApiKey ?? ''
         );
 
-        // Sign with passkey (user authenticates with Face ID, Touch ID, etc.)
-        const signature = await this.passkey.sign(challenge);
+        const submitRequest = JSON.parse(new TextDecoder().decode(prepared.serializedTx)) as SubmitSignedActionRequest;
 
-        // Create the message hash (hex string) for the relayer
-        const messageHash = createGaslessMessageHash(
-            params.targetChain,
-            actionPayload,
-            nonce,
-            hubChainId
-        );
-
-        // Submit to relayer for gasless execution
-        const submitRequest: SubmitSignedActionRequest = {
-            messageHash,
-            r: '0x' + signature.r.toString(16).padStart(64, '0'),
-            s: '0x' + signature.s.toString(16).padStart(64, '0'),
-            publicKeyX: '0x' + credential.publicKeyX.toString(16).padStart(64, '0'),
-            publicKeyY: '0x' + credential.publicKeyY.toString(16).padStart(64, '0'),
-            targetChain: params.targetChain,
-            actionPayload,
-            nonce: Number(nonce),
-        };
+        // Ensure the request body uses our canonical payload (defensive)
+        (submitRequest as any).actionPayload = actionPayload;
 
         const relayerResult = await this.relayer.submitSignedAction(submitRequest);
 
@@ -890,6 +880,7 @@ export class VeridexSDK {
 
         // Track the Hub transaction
         if (relayerResult.txHash) {
+            const hubChainId = chainConfig.hubChainId ?? chainConfig.wormholeChainId;
             this.transactions.track(
                 relayerResult.txHash,
                 hubChainId,
@@ -948,11 +939,66 @@ export class VeridexSDK {
     async getVaultBalances(includeZeroBalances: boolean = false): Promise<PortfolioBalance> {
         const vaultAddress = this.getVaultAddress();
         const chainConfig = this.chain.getConfig();
-        return await this.balance.getPortfolioBalance(
-            chainConfig.wormholeChainId,
-            vaultAddress,
-            includeZeroBalances
-        );
+
+        // Prefer Wormhole Queries when possible (faster, Guardian-attested), but preserve
+        // existing behavior as a fallback.
+        const credential = this.passkey.getCredential();
+        if (credential && this.queryApiKey) {
+            try {
+                const wormholeChainId = chainConfig.wormholeChainId;
+                const tokenList = getAllTokens(wormholeChainId);
+                const erc20Tokens = tokenList
+                    .filter((t) => !isNativeToken(t.address))
+                    .map((t) => t.address);
+
+                const result = await queryPortfolio(credential.keyHash, this.queryApiKey, {
+                    network: this.testnet ? 'testnet' : 'mainnet',
+                    vaultAddresses: { [wormholeChainId]: vaultAddress },
+                    evmTokenAddresses: { [wormholeChainId]: erc20Tokens },
+                    rpcUrls: { [wormholeChainId]: chainConfig.rpcUrl },
+                    maxAge: 60,
+                });
+
+                const chain = result.chains.find((c) => c.wormholeChainId === wormholeChainId);
+                if (chain && !chain.error) {
+                    const byAssetId = new Map(chain.balances.map((b) => [b.assetId.toLowerCase(), b] as const));
+                    const tokens = tokenList.map((t) => {
+                        if (isNativeToken(t.address)) {
+                            return null;
+                        }
+                        const found = byAssetId.get(t.address.toLowerCase());
+                        const amount = found?.amount ?? 0n;
+                        const formatted = ethers.formatUnits(amount, t.decimals);
+                        return {
+                            token: t,
+                            balance: amount,
+                            formatted,
+                            usdValue: found?.usdValue,
+                        };
+                    }).filter((t): t is NonNullable<typeof t> => !!t);
+
+                    // Add native token via RPC (Queries don't support native ETH balance).
+                    const native = await this.balance.getNativeBalance(wormholeChainId, vaultAddress);
+                    const merged = [native, ...tokens];
+
+                    const filtered = includeZeroBalances ? merged : merged.filter((t) => t.balance > 0n);
+                    const totalUsdValue = filtered.reduce((sum, t) => sum + (t.usdValue ?? 0), 0);
+
+                    return {
+                        wormholeChainId,
+                        chainName: chainConfig.name,
+                        address: vaultAddress,
+                        tokens: filtered,
+                        totalUsdValue: totalUsdValue || undefined,
+                        lastUpdated: Date.now(),
+                    };
+                }
+            } catch {
+                // Fall back to the existing RPC-based balance logic.
+            }
+        }
+
+        return await this.balance.getPortfolioBalance(chainConfig.wormholeChainId, vaultAddress, includeZeroBalances);
     }
 
     /**

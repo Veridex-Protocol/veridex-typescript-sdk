@@ -8,7 +8,9 @@ import { queryHubState } from '../queries/hubState.js';
 
 export type AuthenticateAndPrepareParams = {
   credential: PasskeyCredential;
-  action: TransferParams | ExecuteParams | BridgeParams;
+  action?: TransferParams | ExecuteParams | BridgeParams;
+  /** Pre-encoded Hub action payload (hex string). If provided, `action` is ignored. */
+  actionPayload?: string;
   targetChain: number;
 };
 
@@ -120,7 +122,13 @@ export async function authenticateAndPrepare(
   const network = resolveNetwork();
   const hubChainId = getHubChainId(network);
 
-  const actionPayload = encodeActionPayload(userParams.action, userParams.targetChain);
+  const actionPayload = userParams.actionPayload ?? (userParams.action
+    ? encodeActionPayload(userParams.action, userParams.targetChain)
+    : undefined);
+
+  if (!actionPayload) {
+    throw new Error('Missing action payload: provide either actionPayload or action');
+  }
 
   let nonce: bigint;
   let queryProof: Uint8Array<ArrayBufferLike> = new Uint8Array();
@@ -128,10 +136,11 @@ export async function authenticateAndPrepare(
 
   const queryStart = Date.now();
   try {
-    const state = await queryHubState(userParams.credential.keyHash, apiKey, {
-      network,
-      maxAge: 60,
-    });
+    if (!apiKey) {
+      throw new Error('Missing Query Proxy apiKey');
+    }
+
+    const state = await queryHubState(userParams.credential.keyHash, apiKey, { network, maxAge: 60 });
 
     if (!state.isRegistered) {
       // This is a hard failure: signing won’t help if the key isn’t registered.

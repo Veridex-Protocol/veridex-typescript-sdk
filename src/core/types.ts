@@ -26,6 +26,12 @@ export interface VeridexConfig {
     relayerApiKey?: string;
 
     /**
+     * API key for Wormhole Query Proxy requests (optional).
+     * If omitted, the SDK will fall back to `relayerApiKey` for Queries.
+     */
+    queryApiKey?: string;
+
+    /**
      * Whether to use testnet or mainnet
      */
     testnet?: boolean;
