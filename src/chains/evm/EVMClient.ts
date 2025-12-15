@@ -386,9 +386,18 @@ export class EVMClient implements ChainClient {
             if (this.factoryContract) {
                 return await this.factoryContract.vaultExists(userKeyHash);
             }
-            return await this.hubContract.vaultExists(userKeyHash);
-        } catch (error) {
-            console.error('Error checking vault existence:', error);
+            // Hub chains may not have vaultExists, silently return false
+            if (this.hubContract.vaultExists) {
+                try {
+                    return await this.hubContract.vaultExists(userKeyHash);
+                } catch {
+                    // Hub contract doesn't have vaultExists - this is expected on hub-only chains
+                    return false;
+                }
+            }
+            return false;
+        } catch {
+            // Silently return false - vault existence check is non-critical
             return false;
         }
     }

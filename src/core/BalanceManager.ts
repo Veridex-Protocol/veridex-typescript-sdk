@@ -66,6 +66,21 @@ const DEFAULT_RPC_URLS: Record<number, string> = {
 };
 
 /**
+ * Testnet token prices (USD) for development/testing
+ * These are static estimates since testnet tokens have no real value
+ */
+const TESTNET_TOKEN_PRICES: Record<string, number> = {
+    ETH: 2500,
+    WETH: 2500,
+    USDC: 1,
+    USDT: 1,
+    DAI: 1,
+    WBTC: 60000,
+    LINK: 15,
+    UNI: 8,
+};
+
+/**
  * ERC20 ABI for balance checking
  */
 const ERC20_ABI = [
@@ -147,11 +162,15 @@ export class BalanceManager {
 
         const balance = await this.fetchBalance(provider, address, tokenAddress, tokenInfo);
         const formatted = ethers.formatUnits(balance, tokenInfo.decimals);
+        // Calculate USD value using testnet prices
+        const price = TESTNET_TOKEN_PRICES[tokenInfo.symbol.toUpperCase()];
+        const usdValue = price ? parseFloat(formatted) * price : undefined;
 
         return {
             token: tokenInfo,
             balance,
             formatted,
+            usdValue,
         };
     }
 
@@ -196,10 +215,13 @@ export class BalanceManager {
                     token
                 );
                 const formatted = ethers.formatUnits(balance, token.decimals);
-                return { token, balance, formatted };
+                // Calculate USD value using testnet prices
+                const price = TESTNET_TOKEN_PRICES[token.symbol.toUpperCase()];
+                const usdValue = price ? parseFloat(formatted) * price : undefined;
+                return { token, balance, formatted, usdValue };
             } catch (error) {
                 console.warn(`Failed to fetch ${token.symbol} balance:`, error);
-                return { token, balance: 0n, formatted: '0' };
+                return { token, balance: 0n, formatted: '0', usdValue: undefined };
             }
         });
 
@@ -211,11 +233,15 @@ export class BalanceManager {
             }
         }
 
+        // Calculate total USD value
+        const totalUsdValue = balances.reduce((sum, b) => sum + (b.usdValue ?? 0), 0);
+
         const portfolio: PortfolioBalance = {
             wormholeChainId,
             chainName: tokenList.chainName,
             address,
             tokens: balances,
+            totalUsdValue: totalUsdValue > 0 ? totalUsdValue : undefined,
             lastUpdated: Date.now(),
         };
 
