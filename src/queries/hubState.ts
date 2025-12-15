@@ -90,7 +90,8 @@ function signaturesToProofBytes(signatures: string[]): Uint8Array {
         `Invalid guardian signature format (expected 132 hex chars): ${String(sig)}`
       );
     }
-    chunks.push(new Uint8Array(Buffer.from(sig, 'hex')));
+    // Avoid Node Buffer-backed Uint8Array (can surface as SharedArrayBuffer in DTS types).
+    chunks.push(hexToUint8Array(`0x${sig}`));
   }
 
   return concatBytes(chunks);

@@ -218,6 +218,9 @@ export type {
 export * from './constants.js';
 export * from './utils.js';
 export * from './payload.js';
+
+// Client-first authentication preparation (Wormhole Queries)
+export * from './auth/prepareAuth.js';
 export * from './queries/index.js';
 export * from './wormhole.js';
 
