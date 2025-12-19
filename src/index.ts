@@ -74,6 +74,28 @@ export { RelayerClient, createRelayerClient } from './core/RelayerClient.js';
 export { GasSponsor, createGasSponsor } from './core/GasSponsor.js';
 
 // ============================================================================
+// Error Code Exports (for Solana program error parsing)
+// ============================================================================
+
+export {
+  VERIDEX_ERRORS,
+  ERROR_RANGES,
+  ERROR_MESSAGES,
+  isCoreError,
+  isQueryExecutionError,
+  isAbiError,
+  isQueryParsingError,
+  isQueryError,
+  getErrorCategory,
+  getErrorMessage,
+  parseVeridexError,
+  isRetryableError,
+  getSuggestedAction,
+} from './constants/errors.js';
+
+export type { VeridexErrorCode } from './constants/errors.js';
+
+// ============================================================================
 // Type Exports
 // ============================================================================
 
