@@ -72,6 +72,9 @@ const HUB_ABI = [
     'function getVaultAddress(bytes32 userKeyHash) view returns (address)',
     'function vaultExists(bytes32 userKeyHash) view returns (bool)',
     'function createVault(bytes32 userKeyHash) returns (address)',
+    // Issue #9/#10: New Hub methods for Query-based execution
+    'function getUserState(bytes32 userKeyHash) view returns (bytes32 keyHash, uint256 nonce, bytes32 lastActionHash)',
+    'function getUserLastActionHash(bytes32 userKeyHash) view returns (bytes32)',
 ];
 
 // ============================================================================
@@ -146,6 +149,46 @@ export class EVMClient implements ChainClient {
     async getNonce(userKeyHash: string): Promise<bigint> {
         const nonce = await this.hubContract.getNonce(userKeyHash);
         return BigInt(nonce.toString());
+    }
+
+    /**
+     * Get user state from Hub (Issue #9/#10)
+     * Returns comprehensive state including last action hash
+     */
+    async getUserState(userKeyHash: string): Promise<{
+        keyHash: string;
+        nonce: bigint;
+        lastActionHash: string;
+    }> {
+        try {
+            const result = await this.hubContract.getUserState(userKeyHash);
+            return {
+                keyHash: result[0],
+                nonce: BigInt(result[1].toString()),
+                lastActionHash: result[2],
+            };
+        } catch (error) {
+            // Fallback for older Hub deployments without getUserState
+            const nonce = await this.getNonce(userKeyHash);
+            return {
+                keyHash: userKeyHash,
+                nonce,
+                lastActionHash: ethers.ZeroHash,
+            };
+        }
+    }
+
+    /**
+     * Get user's last action hash from Hub (Issue #9/#10)
+     * Returns zero hash if user has no actions yet
+     */
+    async getUserLastActionHash(userKeyHash: string): Promise<string> {
+        try {
+            return await this.hubContract.getUserLastActionHash(userKeyHash);
+        } catch (error) {
+            // Fallback for older Hub deployments
+            return ethers.ZeroHash;
+        }
     }
 
     async getMessageFee(): Promise<bigint> {

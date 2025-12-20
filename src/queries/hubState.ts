@@ -29,6 +29,8 @@ export type HubStateResult = {
   isRegistered: boolean;
   blockTime: number;
   proof: Uint8Array;
+  /** Last action hash (Issue #9/#10 - for action-hash binding) */
+  lastActionHash?: string;
 };
 
 export type QueryHubStateErrorCode =
@@ -210,12 +212,23 @@ function encodeHubCalls(hubAddress: string, userKeyHash: string): { to: string; 
     'function isKeyRegisteredByHash(bytes32 userKeyHash) view returns (bool)',
   ];
 
+  // Issue #9/#10: Add getUserLastActionHash for action-hash binding
+  const actionHashAbiCandidates = [
+    'function getUserLastActionHash(bytes32 userKeyHash) view returns (bytes32)',
+    'function userLastActionHash(bytes32 userKeyHash) view returns (bytes32)',
+  ];
+
   // We encode *all* candidates; the proxy will execute each call, and we decode the first successful one.
   // This makes the client resilient to Hub ABI differences across deployments.
-  const iface = new ethers.Interface([...nonceAbiCandidates, ...registeredAbiCandidates]);
+  const iface = new ethers.Interface([
+    ...nonceAbiCandidates,
+    ...registeredAbiCandidates,
+    ...actionHashAbiCandidates,
+  ]);
 
   const nonceFnNames = ['getUserNonce', 'userNonces', 'getNonceByHash'] as const;
   const regFnNames = ['registeredKeys', 'isKeyRegisteredByHash'] as const;
+  const actionHashFnNames = ['getUserLastActionHash', 'userLastActionHash'] as const;
 
   return [
     ...nonceFnNames.map((fn) => ({
@@ -223,6 +236,10 @@ function encodeHubCalls(hubAddress: string, userKeyHash: string): { to: string; 
       data: iface.encodeFunctionData(fn, [userKeyHash]),
     })),
     ...regFnNames.map((fn) => ({
+      to: hubAddress,
+      data: iface.encodeFunctionData(fn, [userKeyHash]),
+    })),
+    ...actionHashFnNames.map((fn) => ({
       to: hubAddress,
       data: iface.encodeFunctionData(fn, [userKeyHash]),
     })),
@@ -278,8 +295,38 @@ function decodeFirstIsRegistered(results: string[]): boolean {
   return false;
 }
 
-/**
- * Fetch Guardian-attested Hub state directly from the Wormhole Query Proxy.
+/** * Decode last action hash from query results (Issue #9/#10)
+ * Returns zero hash if not available (backwards compatibility)
+ */
+function decodeLastActionHash(results: string[]): string {
+  const nonceCandidateCount = 3;
+  const registeredCandidateCount = 2;
+  const actionHashOffset = nonceCandidateCount + registeredCandidateCount;
+
+  const candidates = [
+    'function getUserLastActionHash(bytes32 userKeyHash) view returns (bytes32)',
+    'function userLastActionHash(bytes32 userKeyHash) view returns (bytes32)',
+  ];
+  const iface = new ethers.Interface(candidates);
+  const fnNames = ['getUserLastActionHash', 'userLastActionHash'] as const;
+
+  for (let i = 0; i < fnNames.length; i++) {
+    const fnName = fnNames[i];
+    try {
+      const data = results[actionHashOffset + i];
+      if (!data || data === '0x') continue;
+      const decoded = iface.decodeFunctionResult(fnName, data);
+      return decoded[0] as string;
+    } catch {
+      // keep trying
+    }
+  }
+
+  // Backwards compatibility: return zero hash if not available
+  return ethers.ZeroHash;
+}
+
+/** * Fetch Guardian-attested Hub state directly from the Wormhole Query Proxy.
  *
  * Client-side only: this avoids relayer API costs and produces a Guardian-signed proof
  * that can be forwarded to the relayer for on-chain verification/submission.
@@ -364,12 +411,14 @@ export async function queryHubState(
 
       const nonce = decodeFirstNonce(chainResp.results);
       const isRegistered = decodeFirstIsRegistered(chainResp.results);
+      const lastActionHash = decodeLastActionHash(chainResp.results);
 
       return {
         nonce,
         isRegistered,
         blockTime,
         proof,
+        lastActionHash,
       } satisfies HubStateResult;
     } catch (err) {
       if (err instanceof QueryHubStateError) throw err;

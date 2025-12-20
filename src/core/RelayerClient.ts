@@ -139,6 +139,53 @@ export interface SubmitActionResult {
 }
 
 /**
+ * Query submission request (Issue #11/#12)
+ * For optimistic execution via Wormhole Query proofs (~5-7s vs ~120s)
+ */
+export interface SubmitQueryRequest {
+    /** Target spoke chain Wormhole ID */
+    targetChain: number;
+    /** User's key hash */
+    userKeyHash: string;
+    /** Serialized transaction for spoke chain */
+    serializedTx: string; // hex
+    /** Query proof with Guardian signatures */
+    queryProof: {
+        /** Raw query response bytes */
+        queryResponse: string; // hex
+        /** Guardian signatures */
+        signatures: string; // hex
+    };
+    /** Whether to fallback to VAA if Query fails */
+    fallbackToVaa?: boolean;
+    /** Optional metadata */
+    metadata?: {
+        /** User's preferred execution path */
+        preferredPath?: 'query' | 'vaa';
+        /** Transaction value in USD (for routing decisions) */
+        estimatedValueUSD?: number;
+    };
+}
+
+/**
+ * Query submission result (Issue #11/#12)
+ */
+export interface SubmitQueryResult {
+    /** Whether submission succeeded */
+    success: boolean;
+    /** Transaction hash on spoke chain */
+    txHash?: string;
+    /** Execution path used */
+    path: 'query' | 'vaa';
+    /** Latency in milliseconds */
+    latencyMs?: number;
+    /** Error message if failed */
+    error?: string;
+    /** Whether fallback to VAA occurred */
+    fellBack?: boolean;
+}
+
+/**
  * Fee quote for a relay
  */
 export interface RelayFeeQuote {
@@ -259,6 +306,50 @@ export class RelayerClient {
                 };
             }
             // Re-throw other errors
+            throw err;
+        }
+    }
+
+    /**
+     * Submit a Query-based transaction for optimistic execution (Issue #11/#12)
+     * 
+     * Uses Wormhole Cross-Chain Queries (CCQ) to achieve ~5-7 second latency
+     * vs ~120+ seconds for traditional VAA flow.
+     * 
+     * Flow:
+     * 1. Client fetches Hub state via queryHubState() from SDK
+     * 2. Client constructs and signs transaction
+     * 3. Client submits Query proof + tx to this endpoint
+     * 4. Relayer validates format and submits to spoke chain
+     * 5. Spoke chain verifies Guardian signatures on-chain
+     * 
+     * @param request - Query submission with Guardian-signed proof
+     * @returns Result including spoke tx hash and execution path
+     */
+    async submitQuery(request: SubmitQueryRequest): Promise<SubmitQueryResult> {
+        try {
+            const response = await this.fetch('/api/v1/submit-query', {
+                method: 'POST',
+                body: JSON.stringify(request),
+            });
+
+            return {
+                success: response.success ?? false,
+                txHash: response.txHash,
+                path: response.path ?? 'query',
+                latencyMs: response.latencyMs,
+                error: response.error,
+                fellBack: response.fellBack ?? false,
+            };
+        } catch (err: any) {
+            // Handle errors gracefully
+            if (err.status === 400 && err.body) {
+                return {
+                    success: false,
+                    path: 'query',
+                    error: err.body.error ?? 'Relayer returned 400 Bad Request',
+                };
+            }
             throw err;
         }
     }

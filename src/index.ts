@@ -136,6 +136,11 @@ export type {
     VAASignature,
     VeridexPayload,
 
+    // Query Types (Issue #9/#10/#11/#12)
+    QueryProof,
+    ExecutionPath,
+    QuerySubmissionResult,
+
     // Chain Client Interface
     ChainClient,
 
@@ -197,6 +202,9 @@ export type {
     RelayerClientConfig,
     SubmitSignedActionRequest,
     SubmitActionResult,
+    // Issue #11/#12: Query submission types
+    SubmitQueryRequest,
+    SubmitQueryResult,
 } from './core/RelayerClient.js';
 
 // Re-export Gas Sponsor types

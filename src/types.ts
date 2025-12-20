@@ -98,6 +98,44 @@ export interface BridgeAction {
   type: 'bridge';
   token: string;
   amount: bigint;
+
+// ============================================================================
+// Query Types (Issue #9/#10/#11/#12)
+// ============================================================================
+
+/**
+ * Wormhole Query proof for optimistic execution
+ * Allows ~5-7 second latency vs ~120+ seconds for VAA
+ */
+export interface QueryProof {
+  /** Raw query response bytes from Wormhole Guardians */
+  queryResponse: string; // hex
+  /** Guardian signatures (13/19 quorum) */
+  signatures: string; // hex
+}
+
+/**
+ * User preference for execution path
+ */
+export type ExecutionPath = 'query' | 'vaa' | 'auto';
+
+/**
+ * Result from query-based submission
+ */
+export interface QuerySubmissionResult {
+  /** Whether submission succeeded */
+  success: boolean;
+  /** Transaction hash on spoke chain */
+  txHash?: string;
+  /** Execution path used ('query' or 'vaa') */
+  path: ExecutionPath;
+  /** Latency in milliseconds */
+  latencyMs?: number;
+  /** Error message if failed */
+  error?: string;
+  /** Whether fallback to VAA was triggered */
+  fellBack?: boolean;
+}
   targetChain: number;
   recipient: string;
 }
