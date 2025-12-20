@@ -284,17 +284,48 @@ export function encodeSuiTransferAction(
 
 /**
  * Pad an address to 32 bytes (Wormhole standard)
+ * Supports both EVM addresses (0x...) and Solana addresses (base58)
  */
 export function padTo32Bytes(address: string): string {
   // Handle native token - convert to zero address
   if (address.toLowerCase() === 'native') {
     return '0x' + '0'.repeat(64);
   }
-  const hex = address.replace('0x', '');
-  // Validate that hex only contains valid hex characters
-  if (!/^[0-9a-fA-F]*$/.test(hex)) {
-    throw new Error(`Invalid address: ${address}. Expected hex string or 'native'.`);
+  
+  // If it starts with 0x, treat as hex
+  if (address.startsWith('0x')) {
+    const hex = address.replace('0x', '');
+    // Validate that hex only contains valid hex characters
+    if (!/^[0-9a-fA-F]*$/.test(hex)) {
+      throw new Error(`Invalid address: ${address}. Expected hex string or 'native'.`);
+    }
+    return '0x' + hex.padStart(64, '0');
   }
+  
+  // Otherwise, assume base58 Solana address and decode it
+  // Base58 character set (Bitcoin/Solana style - no 0, O, I, l)
+  const base58Chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  
+  // Validate base58 characters
+  for (const char of address) {
+    if (!base58Chars.includes(char)) {
+      throw new Error(`Invalid address: ${address}. Contains invalid base58 character '${char}'.`);
+    }
+  }
+  
+  // Decode base58 to bytes
+  let value = BigInt(0);
+  for (const char of address) {
+    value = value * 58n + BigInt(base58Chars.indexOf(char));
+  }
+  
+  // Convert to 32-byte hex
+  let hex = value.toString(16);
+  // Ensure it's not longer than 64 chars (32 bytes)
+  if (hex.length > 64) {
+    throw new Error(`Invalid address: ${address}. Decoded value too large for 32 bytes.`);
+  }
+  
   return '0x' + hex.padStart(64, '0');
 }
 
@@ -308,17 +339,10 @@ export function trimTo20Bytes(hex32: string): string {
 
 /**
  * Convert a Solana public key (base58) to bytes32
- * Note: For production, use proper base58 decoding
+ * @deprecated Use padTo32Bytes instead, which now handles both EVM and Solana addresses
  */
 export function solanaAddressToBytes32(base58Address: string): string {
-  if (base58Address.startsWith('0x')) {
-    return padTo32Bytes(base58Address);
-  }
-
-  // For proper base58 decoding, use @solana/web3.js
-  // This is a simplified version for SDK use
-  console.warn('Note: Use @solana/web3.js for proper base58 decoding in production');
-  return padTo32Bytes('0x' + Buffer.from(base58Address).toString('hex').slice(0, 40));
+  return padTo32Bytes(base58Address);
 }
 
 // ============================================================================

@@ -263,8 +263,8 @@ export class SolanaClient implements ChainClient {
         void userKeyHash;
         void signer;
         throw new Error(
-            'Vault creation on Solana must be done via cross-chain message from Hub. ' +
-            'Use the Hub chain client to dispatch a vault creation action targeting Solana.'
+            'Vault creation on Solana must be done via relayer. ' +
+            'Use createVaultViaRelayer() instead.'
         );
     }
 
@@ -277,9 +277,66 @@ export class SolanaClient implements ChainClient {
         void sponsorPrivateKey;
         void rpcUrl;
         throw new Error(
-            'Vault creation on Solana must be done via cross-chain message from Hub. ' +
-            'Use relayer gasless submission to create vault.'
+            'Vault creation on Solana must be done via relayer. ' +
+            'Use createVaultViaRelayer() instead.'
         );
+    }
+
+    /**
+     * Create a vault via the relayer (sponsored/gasless)
+     * This is the recommended way to create Solana vaults
+     */
+    async createVaultViaRelayer(
+        userKeyHash: string,
+        relayerUrl: string
+    ): Promise<VaultCreationResult> {
+        const response = await fetch(`${relayerUrl}/api/v1/solana/vault`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                userKeyHash,
+                chainId: this.config.wormholeChainId,
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to create vault via relayer');
+        }
+
+        return {
+            address: result.vaultAddress,
+            transactionHash: result.transactionHash || '',
+            blockNumber: 0, // Solana doesn't have block numbers like EVM
+            gasUsed: 0n, // Solana uses compute units, not gas
+            alreadyExisted: !result.transactionHash,
+            sponsoredBy: 'relayer',
+        };
+    }
+
+    /**
+     * Get vault info via relayer (includes existence check)
+     */
+    async getVaultViaRelayer(
+        userKeyHash: string,
+        relayerUrl: string
+    ): Promise<{ vaultAddress: string; exists: boolean }> {
+        const response = await fetch(
+            `${relayerUrl}/api/v1/solana/vault/${userKeyHash}?chainId=${this.config.wormholeChainId}`
+        );
+
+        if (!response.ok) {
+            throw new Error('Failed to get vault info from relayer');
+        }
+
+        const result = await response.json();
+        return {
+            vaultAddress: result.vaultAddress,
+            exists: result.exists,
+        };
     }
 
     async estimateVaultCreationGas(userKeyHash: string): Promise<bigint> {
