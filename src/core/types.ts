@@ -98,6 +98,46 @@ export interface ChainConfig {
 }
 
 // ============================================================================
+// Session Management Types (for spoke chains)
+// ============================================================================
+
+/**
+ * Parameters for registering a new session key
+ */
+export interface RegisterSessionParams {
+    /** Public key of the session (secp256k1) */
+    sessionPublicKey: Uint8Array;
+    /** Session expiry timestamp (seconds) */
+    expiry: number;
+    /** Maximum transaction value in base units */
+    maxValue: bigint;
+    /** Wormhole chain IDs where session is valid */
+    chainScopes: number[];
+}
+
+/**
+ * Parameters for revoking an existing session
+ */
+export interface RevokeSessionParams {
+    /** Keccak256 hash of session public key to revoke */
+    sessionKeyHash: string;
+}
+
+/**
+ * Result of session validation query
+ */
+export interface SessionValidationResult {
+    /** Whether session is currently active */
+    isActive: boolean;
+    /** Session expiry timestamp (0 if not active) */
+    expiry: number;
+    /** Max transaction value (0 if not active) */
+    maxValue: bigint;
+    /** Allowed chain scopes */
+    chainScopes: number[];
+}
+
+// ============================================================================
 // Credential Types
 // ============================================================================
 

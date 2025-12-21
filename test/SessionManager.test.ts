@@ -176,7 +176,10 @@ describe('SessionManager', () => {
                 mockHub,
                 mockPasskeySign,
                 sessionConfig,
-                { storageBackend: 'localstorage' }
+                { 
+                    defaultSessionConfig: sessionConfig,
+                    storageBackend: 'localstorage' 
+                }
             );
             
             const loadedSession = await newManager.loadSession();
@@ -282,7 +285,10 @@ describe('SessionManager', () => {
                 mockHub,
                 mockPasskeySign,
                 { ...sessionConfig, maxValue: 0n },
-                { storageBackend: 'localstorage' }
+                { 
+                    defaultSessionConfig: { ...sessionConfig, maxValue: 0n },
+                    storageBackend: 'localstorage' 
+                }
             );
             
             await unlimitedManager.createSession();
@@ -340,7 +346,10 @@ describe('SessionManager', () => {
                 mockHub,
                 mockPasskeySign,
                 { ...sessionConfig, duration: 1 },
-                { storageBackend: 'localstorage' }
+                { 
+                    defaultSessionConfig: { ...sessionConfig, duration: 1 },
+                    storageBackend: 'localstorage' 
+                }
             );
             
             await shortLivedManager.createSession();
@@ -387,7 +396,10 @@ describe('SessionManager', () => {
                 mockHub,
                 mockPasskeySign,
                 sessionConfig,
-                { storageBackend: 'localstorage' }
+                { 
+                    defaultSessionConfig: sessionConfig,
+                    storageBackend: 'localstorage' 
+                }
             );
             
             const loadedAfter = await newManager.loadSession();
@@ -420,7 +432,10 @@ describe('SessionManager', () => {
                 mockHub,
                 mockPasskeySign,
                 { ...sessionConfig, autoRefresh: true, duration: 10, refreshBuffer: 5 },
-                { storageBackend: 'localstorage' }
+                { 
+                    defaultSessionConfig: { ...sessionConfig, autoRefresh: true, duration: 10, refreshBuffer: 5 },
+                    storageBackend: 'localstorage' 
+                }
             );
             
             await autoRefreshManager.createSession();
@@ -449,7 +464,16 @@ describe('SessionManager', () => {
                     refreshBuffer: 300, // 5 minutes (longer than duration)
                     chainScopes: [],
                 },
-                { storageBackend: 'localstorage' }
+                { 
+                    defaultSessionConfig: {
+                        duration: 60,
+                        maxValue: 0n,
+                        autoRefresh: true,
+                        refreshBuffer: 300,
+                        chainScopes: [],
+                    },
+                    storageBackend: 'localstorage' 
+                }
             );
             
             await autoRefreshManager.createSession();
@@ -556,7 +580,10 @@ describe('SessionManager', () => {
                 mockHub,
                 mockPasskeySign,
                 sessionConfig,
-                { storageBackend: 'localstorage' }
+                { 
+                    defaultSessionConfig: sessionConfig,
+                    storageBackend: 'localstorage' 
+                }
             );
             
             // Would need to inject the keyPair for testing

@@ -88,6 +88,7 @@ export const WORMHOLE_CHAIN_IDS = {
     OPTIMISM_SEPOLIA: 10005,
     HOLESKY: 10006,
     POLYGON_SEPOLIA: 10007,
+    SEI_ATLANTIC_2: 10066, // Sei Arctic-1 testnet (EVM)
   },
 } as const;
 
