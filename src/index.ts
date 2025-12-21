@@ -73,6 +73,30 @@ export { RelayerClient, createRelayerClient } from './core/RelayerClient.js';
 // Gas Sponsorship (Gasless Vault Creation)
 export { GasSponsor, createGasSponsor } from './core/GasSponsor.js';
 
+// Session Key Management (Issue #14)
+export { SessionManager } from './sessions/index.js';
+export { EVMHubClientAdapter } from './chains/evm/index.js';
+export { 
+    generateSecp256k1KeyPair,
+    computeSessionKeyHash,
+    signWithSessionKey,
+    hashAction,
+    verifySessionSignature,
+    deriveEncryptionKey,
+    encrypt,
+    decrypt,
+    validateSessionConfig,
+    MAX_SESSION_DURATION,
+    MIN_SESSION_DURATION,
+    DEFAULT_SESSION_DURATION,
+    DEFAULT_REFRESH_BUFFER,
+} from './sessions/crypto.js';
+export { 
+    IndexedDBSessionStorage,
+    LocalStorageSessionStorage,
+    createSessionStorage,
+} from './sessions/storage.js';
+
 // ============================================================================
 // Error Code Exports (for Solana program error parsing)
 // ============================================================================
@@ -136,11 +160,6 @@ export type {
     VAASignature,
     VeridexPayload,
 
-    // Query Types (Issue #9/#10/#11/#12)
-    QueryProof,
-    ExecutionPath,
-    QuerySubmissionResult,
-
     // Chain Client Interface
     ChainClient,
 
@@ -158,6 +177,21 @@ export type {
     PreparedBridge,
     BridgeResult,
 } from './core/types.js';
+
+// Query Types (Issue #9/#10/#11/#12) - from types.js
+export type {
+    QueryProof,
+    ExecutionPath,
+    QuerySubmissionResult,
+} from './types.js';
+
+// Session Key Types (Issue #13 - Hub contract) - from types.js
+export type {
+    SessionKey,
+    SessionValidationResult,
+    RegisterSessionParams,
+    RevokeSessionParams,
+} from './types.js';
 
 // Re-export ChainAddressConfig from WalletManager
 export type { ChainAddressConfig } from './core/WalletManager.js';
@@ -215,6 +249,26 @@ export type {
     MultiChainVaultResult,
     SponsorshipSource,
 } from './core/GasSponsor.js';
+
+// Re-export Session Manager types (Issue #14)
+export type {
+    SessionConfig,
+    SessionSignature,
+    SessionManagerConfig,
+    SessionStorage,
+    SessionEvent,
+    SessionEventCallback,
+    ActionParams,
+    SessionSignedAction,
+    SessionErrorCode,
+} from './sessions/types.js';
+
+export type {
+    KeyPair,
+} from './sessions/crypto.js';
+
+export { SessionError } from './sessions/types.js';
+export type { HubClient } from './sessions/index.js';
 
 // ============================================================================
 // Token Constants

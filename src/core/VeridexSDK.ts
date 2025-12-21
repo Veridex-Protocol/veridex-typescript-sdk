@@ -62,7 +62,8 @@ export class VeridexSDK {
     public readonly sponsor: GasSponsor;
     private readonly chain: ChainClient;
     private readonly relayer?: RelayerClient;
-    private readonly relayerApiKey?: string;
+    // TODO: Use relayerApiKey when relayer integration is complete (Issue #8)
+    // private readonly relayerApiKey?: string;
     private readonly queryApiKey?: string;
     private readonly testnet: boolean;
     private readonly sponsorPrivateKey?: string;
@@ -75,7 +76,8 @@ export class VeridexSDK {
         this.testnet = config.testnet ?? true;
         this.sponsorPrivateKey = config.sponsorPrivateKey;
         this.chainRpcUrls = config.chainRpcUrls;
-        this.relayerApiKey = config.relayerApiKey;
+        // TODO: Uncomment when relayerApiKey is used (Issue #8)
+        // this.relayerApiKey = config.relayerApiKey;
         this.queryApiKey = config.queryApiKey ?? config.relayerApiKey;
         this.passkey = new PasskeyManager({
             relayerUrl: config.relayerUrl,

@@ -98,6 +98,9 @@ export interface BridgeAction {
   type: 'bridge';
   token: string;
   amount: bigint;
+  targetChain: number;
+  recipient: string;
+}
 
 // ============================================================================
 // Query Types (Issue #9/#10/#11/#12)
@@ -136,8 +139,74 @@ export interface QuerySubmissionResult {
   /** Whether fallback to VAA was triggered */
   fellBack?: boolean;
 }
-  targetChain: number;
-  recipient: string;
+
+// ============================================================================
+// Session Key Types (Issue #13)
+// ============================================================================
+
+/**
+ * Session key structure for temporary authentication
+ * Enables native L1 speed for repeat transactions without biometric auth
+ */
+export interface SessionKey {
+  /** Hash of the temporary session public key */
+  sessionKeyHash: string;
+  /** Unix timestamp when session expires */
+  expiry: number;
+  /** Maximum transaction value for this session (0 = unlimited) */
+  maxValue: bigint;
+  /** Whether session was manually revoked */
+  revoked: boolean;
+}
+
+/**
+ * Result from session validation query
+ */
+export interface SessionValidationResult {
+  /** Whether session is currently active */
+  active: boolean;
+  /** Session expiry timestamp (0 if inactive) */
+  expiry: number;
+  /** Maximum transaction value (0 if inactive) */
+  maxValue: bigint;
+  /** Index in sessions array */
+  sessionIndex: number;
+}
+
+/**
+ * Parameters for registering a new session
+ */
+export interface RegisterSessionParams {
+  /** Signature for Passkey authentication */
+  signature: WebAuthnSignature;
+  /** User's Passkey public key X coordinate */
+  publicKeyX: bigint;
+  /** User's Passkey public key Y coordinate */
+  publicKeyY: bigint;
+  /** Hash of the temporary session public key */
+  sessionKeyHash: string;
+  /** Session duration in seconds (max 24 hours) */
+  duration: number;
+  /** Maximum transaction value (0 = unlimited) */
+  maxValue: bigint;
+  /** Whether to require user verification */
+  requireUV: boolean;
+}
+
+/**
+ * Parameters for revoking a session
+ */
+export interface RevokeSessionParams {
+  /** Signature for Passkey authentication */
+  signature: WebAuthnSignature;
+  /** User's Passkey public key X coordinate */
+  publicKeyX: bigint;
+  /** User's Passkey public key Y coordinate */
+  publicKeyY: bigint;
+  /** Hash of the session key to revoke */
+  sessionKeyHash: string;
+  /** Whether to require user verification */
+  requireUV: boolean;
 }
 
 export interface ExecuteAction {

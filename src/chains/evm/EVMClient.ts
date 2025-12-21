@@ -75,6 +75,12 @@ const HUB_ABI = [
     // Issue #9/#10: New Hub methods for Query-based execution
     'function getUserState(bytes32 userKeyHash) view returns (bytes32 keyHash, uint256 nonce, bytes32 lastActionHash)',
     'function getUserLastActionHash(bytes32 userKeyHash) view returns (bytes32)',
+    // Issue #13: Session key management
+    'function registerSession(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 sessionKeyHash, uint256 duration, uint256 maxValue, bool requireUV) external',
+    'function isSessionActive(bytes32 userKeyHash, bytes32 sessionKeyHash) view returns (bool active, uint256 expiry, uint256 maxValue, uint256 sessionIndex)',
+    'function revokeSession(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 sessionKeyHash, bool requireUV) external',
+    'function getUserSessions(bytes32 userKeyHash) view returns (tuple(bytes32 sessionKeyHash, uint256 expiry, uint256 maxValue, bool revoked)[])',
+    'function getUserSessionCount(bytes32 userKeyHash) view returns (uint256)',
 ];
 
 // ============================================================================
@@ -189,6 +195,128 @@ export class EVMClient implements ChainClient {
             // Fallback for older Hub deployments
             return ethers.ZeroHash;
         }
+    }
+
+    // ==========================================================================
+    // Session Management Methods (Issue #13)
+    // ==========================================================================
+
+    /**
+     * Register a new session key for temporary authentication
+     * Enables native L1 speed for repeat transactions without biometric auth
+     * 
+     * @param params Session registration parameters
+     * @param signer Ethereum signer to pay gas
+     * @returns Transaction receipt
+     */
+    async registerSession(
+        params: import('../../types.js').RegisterSessionParams,
+        signer: ethers.Signer
+    ): Promise<ethers.TransactionReceipt> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: params.signature.authenticatorData,
+            clientDataJSON: params.signature.clientDataJSON,
+            challengeIndex: params.signature.challengeIndex,
+            typeIndex: params.signature.typeIndex,
+            r: params.signature.r,
+            s: params.signature.s,
+        };
+
+        const tx = await hubWithSigner.registerSession(
+            authTuple,
+            params.publicKeyX,
+            params.publicKeyY,
+            params.sessionKeyHash,
+            params.duration,
+            params.maxValue,
+            params.requireUV
+        );
+
+        return await tx.wait();
+    }
+
+    /**
+     * Check if a session is currently active (queryable via Wormhole CCQ)
+     * 
+     * @param userKeyHash Hash of the user's Passkey public key
+     * @param sessionKeyHash Hash of the session key to check
+     * @returns Session validation result
+     */
+    async isSessionActive(
+        userKeyHash: string,
+        sessionKeyHash: string
+    ): Promise<import('../../types.js').SessionValidationResult> {
+        const result = await this.hubContract.isSessionActive(userKeyHash, sessionKeyHash);
+        
+        return {
+            active: result[0],
+            expiry: Number(result[1]),
+            maxValue: BigInt(result[2].toString()),
+            sessionIndex: Number(result[3]),
+        };
+    }
+
+    /**
+     * Revoke a session key immediately
+     * 
+     * @param params Session revocation parameters
+     * @param signer Ethereum signer to pay gas
+     * @returns Transaction receipt
+     */
+    async revokeSession(
+        params: import('../../types.js').RevokeSessionParams,
+        signer: ethers.Signer
+    ): Promise<ethers.TransactionReceipt> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: params.signature.authenticatorData,
+            clientDataJSON: params.signature.clientDataJSON,
+            challengeIndex: params.signature.challengeIndex,
+            typeIndex: params.signature.typeIndex,
+            r: params.signature.r,
+            s: params.signature.s,
+        };
+
+        const tx = await hubWithSigner.revokeSession(
+            authTuple,
+            params.publicKeyX,
+            params.publicKeyY,
+            params.sessionKeyHash,
+            params.requireUV
+        );
+
+        return await tx.wait();
+    }
+
+    /**
+     * Get all sessions for a user
+     * 
+     * @param userKeyHash Hash of the user's Passkey public key
+     * @returns Array of all sessions (active and expired/revoked)
+     */
+    async getUserSessions(userKeyHash: string): Promise<import('../../types.js').SessionKey[]> {
+        const sessions = await this.hubContract.getUserSessions(userKeyHash);
+        
+        return sessions.map((s: any) => ({
+            sessionKeyHash: s.sessionKeyHash,
+            expiry: Number(s.expiry),
+            maxValue: BigInt(s.maxValue.toString()),
+            revoked: s.revoked,
+        }));
+    }
+
+    /**
+     * Get the number of sessions for a user
+     * 
+     * @param userKeyHash Hash of the user's Passkey public key
+     * @returns Number of sessions
+     */
+    async getUserSessionCount(userKeyHash: string): Promise<number> {
+        const count = await this.hubContract.getUserSessionCount(userKeyHash);
+        return Number(count);
     }
 
     async getMessageFee(): Promise<bigint> {
