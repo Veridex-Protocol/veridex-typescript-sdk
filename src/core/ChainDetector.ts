@@ -106,13 +106,26 @@ export class ChainDetector {
                     network: this.testnet ? 'testnet' : 'mainnet',
                 });
             }
-            default:
-                // Custom/non-wormhole chains (e.g., Starknet) may still be used for identity/balances
+            case 50001: {
+                // Starknet Sepolia with custom bridge
+                const spokeAddress = chain.contracts.hub;
+                const bridgeAddress = chain.contracts.wormholeCoreBridge;
+                if (!spokeAddress || !bridgeAddress) {
+                    throw new Error('Starknet config missing spoke/bridge addresses in constants');
+                }
                 return new StarknetClient({
                     wormholeChainId,
                     rpcUrl,
+                    spokeContractAddress: spokeAddress,
+                    bridgeContractAddress: bridgeAddress,
                     network: this.testnet ? 'sepolia' : 'mainnet',
                 });
+            }
+            default:
+                throw new Error(
+                    `Unsupported non-EVM chain (wormholeChainId=${wormholeChainId}). ` +
+                    'Add configuration in ChainDetector.createClient().'
+                );
         }
     }
 
@@ -150,10 +163,20 @@ export class ChainDetector {
         return {
             wormholeChainId,
             chainName: chain.name,
-            address: wormholeChainId === 21 ? this.normalizeSuiAddress(credential.keyHash) : credential.keyHash,
+            address: wormholeChainId === 21 
+                ? this.normalizeSuiAddress(credential.keyHash)
+                : wormholeChainId === 50001
+                ? credential.keyHash  // Starknet uses keyHash directly (felt252)
+                : credential.keyHash,
             isEvm: false,
             deployed: false,
-            derivationType: wormholeChainId === 1 ? 'pda' : wormholeChainId === 22 ? 'resource_account' : 'object',
+            derivationType: wormholeChainId === 1 
+                ? 'pda' 
+                : wormholeChainId === 22 
+                ? 'resource_account' 
+                : wormholeChainId === 50001
+                ? 'keyHash'
+                : 'object',
         };
     }
 

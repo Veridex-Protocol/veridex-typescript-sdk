@@ -89,6 +89,7 @@ export const WORMHOLE_CHAIN_IDS = {
     HOLESKY: 10006,
     POLYGON_SEPOLIA: 10007,
     SEI_ATLANTIC_2: 10066, // Sei Arctic-1 testnet (EVM)
+    STARKNET_SEPOLIA: 50001, // Custom bridge (non-Wormhole, relayer-attested)
   },
 } as const;
 
@@ -149,6 +150,7 @@ export const WORMHOLE_CHAIN_IDS_FLAT = {
   OPTIMISM_SEPOLIA: 10005,
   POLYGON_SEPOLIA: 10007,
   HOLESKY: 10006,
+  STARKNET_SEPOLIA: 50001, // Custom bridge (non-Wormhole)
 } as const;
 
 // ============================================================================
@@ -164,10 +166,11 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.basescan.org',
     isEvm: true,
     contracts: {
-      hub: '0xf189b649ecb44708165f36619ED24ff917eF1f94',
-      vaultFactory: '0x0E4B53AbCE029Df2a1e0068F16C5A35A6a8D85b6',
-      vaultImplementation: '0x755F4d7191fC8A3e832E9f8b30c7ab6543F943f3',
+      hub: '0x708eEE22621A64CDF51d98d3e8D97902D7dF52dD',
+      vaultFactory: '0x40D9B16094808Fa48e73598E31AB964Cf15b475f',
+      vaultImplementation: '0xcBEb49b0109E61c1C69C51D5D9483A3aD6D18258',
       wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
+      tokenBridge: '0x86F55A04690fd7815A3D802bD587e83eA888B239',
     },
   },
   optimismSepolia: {
@@ -178,9 +181,10 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia-optimism.etherscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0x677bA5C2f9c7377860c7aeB00037E1a5D12B3515',
-      vaultImplementation: '0x966248A18329037B043C21AcDae9B3161C7acB33',
+      vaultFactory: '0xAbB421166E648953CDBE93c0078a0A794c56Fb84',
+      vaultImplementation: '0xDCD7daEf1AC06f4a8392957cca4834F7a16c058D',
       wormholeCoreBridge: '0x31377888146f3253211EFEf5c676D41ECe7D58Fe',
+      tokenBridge: '0x99737Ec4B815d816c49A385943baf0380e75c0Ac',
     },
   },
   arbitrumSepolia: {
@@ -191,9 +195,10 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.arbiscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0xbE9B9c39956448DA75Ac97E5e3dE17e34171660A',
-      vaultImplementation: '0x500853DCc54Fd1A707ec9d443032Bb7748f426d3',
+      vaultFactory: '0xd36D3D5DB59d78f1E33813490F72DABC15C9B07c',
+      vaultImplementation: '0xB10ACf39eBF17fc33F722cBD955b7aeCB0611bc4',
       wormholeCoreBridge: '0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35',
+      tokenBridge: '0xC7A204bDBFe983FCD8d8E61D02b475D4073fF97e',
     },
   },
   seiTestnet: {
@@ -243,9 +248,25 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://suiscan.xyz/testnet',
     isEvm: false,
     contracts: {
-      hub: '0x1657efc2b3f9c195dd3c13708dc15b7c12b747c0468695832d221febefea9032',
+      hub: '0x6ae854c698d73e39f5dc07c4d2291fa81e8732aded14bbff3b98cfa8bfaebff5',
       wormholeCoreBridge: '0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790',
     },
+  },
+  starknetSepolia: {
+    name: 'Starknet Sepolia',
+    chainId: 0, // Native Starknet chain ID (SN_SEPOLIA = 0x534e5f5345504f4c4941)
+    wormholeChainId: 50001, // Custom chain ID (50000+ reserved for non-Wormhole chains)
+    rpcUrl: 'https://starknet-sepolia.public.blastapi.io/rpc/v0_7',
+    explorerUrl: 'https://sepolia.starkscan.co',
+    isEvm: false,
+    contracts: {
+      // Starknet spoke contract
+      hub: '0x767073ab5682d1908c7f6498eee8e480fb2457dbcf34bab075c5dd536d08176',
+      // Custom bridge contract (NOT Wormhole)
+      wormholeCoreBridge: '0x5fb87f29937b2b1eff97e18cd72c3c28985e51e2916b0b75f739c5641845e13',
+    },
+    // Hub chain ID that Starknet bridge validates (Base Sepolia = 10004)
+    hubChainId: 10004,
   },
 };
 

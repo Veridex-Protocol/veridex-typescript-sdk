@@ -230,7 +230,7 @@ export interface ChainAddress {
     /** Transaction hash of vault deployment */
     deploymentTxHash?: string;
     /** For non-EVM chains, the derivation type used */
-    derivationType?: 'pda' | 'resource_account' | 'object' | 'create2';
+    derivationType?: 'pda' | 'resource_account' | 'object' | 'create2' | 'keyHash';
 }
 
 /**
