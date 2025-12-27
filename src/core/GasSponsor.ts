@@ -362,7 +362,7 @@ export class GasSponsor {
             // Get vault address from event or direct query
             const vaultAddress = await factory.getVault(keyHash);
 
-            console.log(`[GasSponsor] ✅ Vault created on ${chain.name}: ${vaultAddress}`);
+            console.log(`[GasSponsor] OK Vault created on ${chain.name}: ${vaultAddress}`);
 
             return {
                 success: true,
