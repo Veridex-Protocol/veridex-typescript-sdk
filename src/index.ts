@@ -3,57 +3,76 @@
  * 
  * Chain-agnostic SDK for Passkey-based cross-chain authentication
  * 
- * @example
+ * @example Simple Initialization (Recommended)
  * ```typescript
- * import { VeridexSDK } from '@veridex/sdk';
- * import { EVMClient } from '@veridex/sdk/chains/evm';
- * import { ethers } from 'ethers';
+ * import { createSDK } from '@veridex/sdk';
  * 
- * // Initialize SDK with EVM chain
- * const sdk = new VeridexSDK({
- *   chain: new EVMClient({
- *     chainId: 84532,
- *     wormholeChainId: 10004,
- *     rpcUrl: 'https://sepolia.base.org',
- *     hubContractAddress: '0xf189b649ecb44708165f36619ED24ff917eF1f94',
- *     wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
- *     vaultFactory: '0x...', // Required for vault address computation
- *     vaultImplementation: '0x...', // Required for vault address computation
- *   }),
- * });
+ * // Just specify chain name - testnet by default
+ * const sdk = createSDK('base');
  * 
  * // Register passkey
- * const credential = await sdk.passkey.register('alice', 'Alice');
- * console.log('Key Hash:', credential.keyHash);
+ * await sdk.passkey.register('alice', 'My Wallet');
  * 
- * // Get deterministic vault address (no deployment needed)
+ * // Get your vault address
  * const vaultAddress = sdk.getVaultAddress();
- * console.log('Your vault address:', vaultAddress);
+ * console.log('Your vault:', vaultAddress);
+ * ```
  * 
- * // Get unified identity with all chain addresses
- * const identity = await sdk.getUnifiedIdentity();
- * console.log('Identity:', identity);
+ * @example Mainnet
+ * ```typescript
+ * const sdk = createSDK('base', { network: 'mainnet' });
+ * ```
  * 
- * // Connect wallet for gas payment
- * const provider = new ethers.BrowserProvider(window.ethereum);
- * const signer = await provider.getSigner();
+ * @example With Gasless Transactions
+ * ```typescript
+ * const sdk = createSDK('base', {
+ *   relayerUrl: 'https://relayer.veridex.io',
+ *   relayerApiKey: 'your-api-key',
+ * });
+ * ```
  * 
- * // Create vault (or ensure it exists)
- * const vault = await sdk.ensureVault(signer);
- * console.log('Vault ready:', vault);
+ * @example Advanced (Direct Construction)
+ * ```typescript
+ * import { VeridexSDK, EVMClient } from '@veridex/sdk';
  * 
- * // Transfer tokens cross-chain
- * const result = await sdk.transfer({
- *   targetChain: 10005, // Optimism Sepolia
- *   token: '0x...', // USDC address
- *   recipient: '0x...',
- *   amount: ethers.parseUnits('100', 6),
- * }, signer);
- * 
- * console.log('Transaction:', result.transactionHash);
- * console.log('VAA Sequence:', result.sequence);
+ * const sdk = new VeridexSDK({
+ *   chain: new EVMClient({ ... }),
+ * });
  * ```
  */
+
+// ============================================================================
+// 🚀 Simple Factory Functions (Recommended)
+// ============================================================================
+
+export {
+    // Main factory function
+    createSDK,
+    
+    // Convenience factories
+    createHubSDK,
+    createTestnetSDK,
+    createMainnetSDK,
+    createSessionSDK,
+    
+    // Chain presets
+    CHAIN_NAMES,
+    CHAIN_PRESETS,
+    getChainConfig,
+    getChainPreset,
+    getSupportedChains,
+    getHubChains,
+    isChainSupported,
+    getDefaultHub,
+} from './factory.js';
+
+export type {
+    // Factory types
+    SimpleSDKConfig,
+    SessionConfig as SimpleSessionConfig,
+    ChainName,
+    NetworkType,
+} from './factory.js';
 
 // ============================================================================
 // Core Exports
