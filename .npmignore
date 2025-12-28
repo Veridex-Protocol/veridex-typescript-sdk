@@ -1,0 +1,34 @@
+# Ignore source files
+src/
+
+# Ignore config files
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
+.eslintrc*
+.prettierrc*
+biome.json
+
+# Ignore test files
+**/*.test.ts
+**/*.spec.ts
+__tests__/
+test/
+coverage/
+
+# Ignore dev dependencies
+node_modules/
+
+# Ignore build artifacts
+*.log
+*.tsbuildinfo
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Include dist
+!dist/

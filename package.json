@@ -1,10 +1,27 @@
 {
   "name": "@veridex/sdk",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
   "description": "Veridex Protocol SDK - Client library for Passkey-based cross-chain authentication",
+  "author": "Veridex Protocol <team@veridex.network>",
+  "license": "MIT",
+  "homepage": "https://docs.veridex.network",
+  "bugs": {
+    "url": "https://github.com/Veridex-Protocol/sdk/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Veridex-Protocol/sdk.git"
+  },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -111,11 +128,18 @@
     "ethereum",
     "solana",
     "aptos",
-    "sui"
+    "sui",
+    "starknet",
+    "authentication",
+    "gasless",
+    "session-keys",
+    "wallet-abstraction"
   ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Veridex-Protocol/demo"
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
