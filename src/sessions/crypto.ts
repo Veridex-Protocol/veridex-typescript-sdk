@@ -58,8 +58,11 @@ export function generateSecp256k1KeyPair(): KeyPair {
         // Extract raw private key (32 bytes)
         const privateKey = ethers.getBytes(wallet.privateKey);
         
-        // Get uncompressed public key (65 bytes: 0x04 || x || y)
-        const publicKey = ethers.getBytes(wallet.publicKey);
+        // ethers v6 returns COMPRESSED public key (33 bytes).
+        // We need UNCOMPRESSED (65 bytes: 0x04 || x || y).
+        // Use SigningKey to derive the uncompressed form.
+        const signingKey = new ethers.SigningKey(wallet.privateKey);
+        const publicKey = ethers.getBytes(signingKey.publicKey);
         
         return {
             publicKey,

@@ -7,64 +7,64 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./wormhole": {
+      "types": "./dist/wormhole.d.ts",
       "import": "./dist/wormhole.mjs",
-      "require": "./dist/wormhole.js",
-      "types": "./dist/wormhole.d.ts"
+      "require": "./dist/wormhole.js"
     },
     "./payload": {
+      "types": "./dist/payload.d.ts",
       "import": "./dist/payload.mjs",
-      "require": "./dist/payload.js",
-      "types": "./dist/payload.d.ts"
+      "require": "./dist/payload.js"
     },
     "./utils": {
+      "types": "./dist/utils.d.ts",
       "import": "./dist/utils.mjs",
-      "require": "./dist/utils.js",
-      "types": "./dist/utils.d.ts"
+      "require": "./dist/utils.js"
     },
     "./constants": {
+      "types": "./dist/constants.d.ts",
       "import": "./dist/constants.mjs",
-      "require": "./dist/constants.js",
-      "types": "./dist/constants.d.ts"
+      "require": "./dist/constants.js"
     },
     "./types": {
+      "types": "./dist/types.d.ts",
       "import": "./dist/types.mjs",
-      "require": "./dist/types.js",
-      "types": "./dist/types.d.ts"
+      "require": "./dist/types.js"
     },
     "./chains/evm": {
+      "types": "./dist/chains/evm/index.d.ts",
       "import": "./dist/chains/evm/index.mjs",
-      "require": "./dist/chains/evm/index.js",
-      "types": "./dist/chains/evm/index.d.ts"
+      "require": "./dist/chains/evm/index.js"
     },
     "./chains/solana": {
+      "types": "./dist/chains/solana/index.d.ts",
       "import": "./dist/chains/solana/index.mjs",
-      "require": "./dist/chains/solana/index.js",
-      "types": "./dist/chains/solana/index.d.ts"
+      "require": "./dist/chains/solana/index.js"
     },
     "./chains/aptos": {
+      "types": "./dist/chains/aptos/index.d.ts",
       "import": "./dist/chains/aptos/index.mjs",
-      "require": "./dist/chains/aptos/index.js",
-      "types": "./dist/chains/aptos/index.d.ts"
+      "require": "./dist/chains/aptos/index.js"
     },
     "./chains/sui": {
+      "types": "./dist/chains/sui/index.d.ts",
       "import": "./dist/chains/sui/index.mjs",
-      "require": "./dist/chains/sui/index.js",
-      "types": "./dist/chains/sui/index.d.ts"
+      "require": "./dist/chains/sui/index.js"
     },
     "./chains/starknet": {
+      "types": "./dist/chains/starknet/index.d.ts",
       "import": "./dist/chains/starknet/index.mjs",
-      "require": "./dist/chains/starknet/index.js",
-      "types": "./dist/chains/starknet/index.d.ts"
+      "require": "./dist/chains/starknet/index.js"
     },
     "./queries": {
+      "types": "./dist/queries/index.d.ts",
       "import": "./dist/queries/index.mjs",
-      "require": "./dist/queries/index.js",
-      "types": "./dist/queries/index.d.ts"
+      "require": "./dist/queries/index.js"
     }
   },
   "scripts": {
@@ -76,6 +76,7 @@
   },
   "dependencies": {
     "@simplewebauthn/browser": "^9.0.1",
+    "@mysten/bcs": "1.9.2",
     "@solana/spl-token": "^0.4.6",
     "@solana/web3.js": "^1.95.4",
     "@wormhole-foundation/sdk": "^0.10.0",

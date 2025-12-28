@@ -676,6 +676,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       isEvm: false,
       contracts: {
         // TODO: Deploy mainnet contracts
+        wormholeCoreBridge: '',
       },
     },
   },

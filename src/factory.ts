@@ -129,6 +129,13 @@ function createChainClient(
   const preset = getChainPreset(chain);
   const config = preset[network];
   const rpcUrl = customRpcUrl || config.rpcUrl;
+
+  const requireString = (value: string | undefined, label: string): string => {
+    if (!value) {
+      throw new Error(`Missing ${label} for chain "${chain}" on network "${network}"`);
+    }
+    return value;
+  };
   
   switch (preset.type) {
     case 'evm':
@@ -136,8 +143,8 @@ function createChainClient(
         chainId: config.chainId,
         wormholeChainId: config.wormholeChainId,
         rpcUrl,
-        hubContractAddress: config.contracts.hub || '',
-        wormholeCoreBridge: config.contracts.wormholeCoreBridge,
+        hubContractAddress: requireString(config.contracts.hub, 'hub contract address'),
+        wormholeCoreBridge: requireString(config.contracts.wormholeCoreBridge, 'Wormhole core bridge address'),
         vaultFactory: config.contracts.vaultFactory,
         vaultImplementation: config.contracts.vaultImplementation,
         tokenBridge: config.contracts.tokenBridge,
@@ -148,19 +155,19 @@ function createChainClient(
     case 'solana':
       return new SolanaClient({
         rpcUrl,
-        programId: config.contracts.hub || '',
-        wormholeCoreBridge: config.contracts.wormholeCoreBridge,
-        tokenBridge: config.contracts.tokenBridge,
+        programId: requireString(config.contracts.hub, 'programId'),
+        wormholeCoreBridge: requireString(config.contracts.wormholeCoreBridge, 'Wormhole core bridge address'),
+        tokenBridge: requireString(config.contracts.tokenBridge, 'token bridge address'),
         wormholeChainId: config.wormholeChainId,
-        network: network === 'testnet' ? 'devnet' : 'mainnet-beta',
+        network: network === 'testnet' ? 'devnet' : 'mainnet',
       });
       
     case 'aptos':
       return new AptosClient({
         rpcUrl,
-        moduleAddress: config.contracts.hub || '',
-        wormholeCoreBridge: config.contracts.wormholeCoreBridge,
-        tokenBridge: config.contracts.tokenBridge,
+        moduleAddress: requireString(config.contracts.hub, 'moduleAddress'),
+        wormholeCoreBridge: requireString(config.contracts.wormholeCoreBridge, 'Wormhole core bridge address'),
+        tokenBridge: requireString(config.contracts.tokenBridge, 'token bridge address'),
         wormholeChainId: config.wormholeChainId,
         network: network,
       });
@@ -168,8 +175,8 @@ function createChainClient(
     case 'sui':
       return new SuiClient({
         rpcUrl,
-        packageId: config.contracts.hub || '',
-        wormholePackageId: config.contracts.wormholeCoreBridge,
+        packageId: requireString(config.contracts.hub, 'packageId'),
+        wormholeCoreBridge: requireString(config.contracts.wormholeCoreBridge, 'Wormhole core bridge address'),
         wormholeChainId: config.wormholeChainId,
         network: network,
       });
@@ -177,10 +184,9 @@ function createChainClient(
     case 'starknet':
       return new StarknetClient({
         rpcUrl,
-        spokeAddress: config.contracts.hub || '',
-        bridgeAddress: config.contracts.wormholeCoreBridge,
+        spokeContractAddress: config.contracts.hub,
+        bridgeContractAddress: config.contracts.wormholeCoreBridge,
         wormholeChainId: config.wormholeChainId,
-        hubChainId: config.hubChainId || 10004,
         network: network === 'testnet' ? 'sepolia' : 'mainnet',
       });
       
