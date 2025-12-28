@@ -4,7 +4,7 @@
   "description": "Veridex Protocol SDK - Client library for Passkey-based cross-chain authentication",
   "author": "Veridex Protocol <team@veridex.network>",
   "license": "MIT",
-  "homepage": "https://docs.veridex.network",
+  "homepage": "https://veridex.network",
   "bugs": {
     "url": "https://github.com/Veridex-Protocol/sdk/issues"
   },
