@@ -94,6 +94,36 @@ export {
 } from './core/TransactionParser.js';
 export type { TransactionAuditEntry } from './core/TransactionParser.js';
 
+// Issue #27: Spending Limits Configuration
+export { 
+    SpendingLimitsManager, 
+    createSpendingLimitsManager,
+} from './core/SpendingLimitsManager.js';
+export type { SpendingLimitsManagerConfig } from './core/SpendingLimitsManager.js';
+export {
+    CONFIG_TYPE,
+    LIMIT_PRESETS,
+    formatDuration,
+    calculatePercentage,
+    formatLargeAmount,
+} from './core/SpendingLimits.types.js';
+export type {
+    SpendingLimits,
+    FormattedSpendingLimits,
+    SpendingLimitConfig,
+    SetDailyLimitParams,
+    SetTransactionLimitParams,
+    LimitCheckResult,
+    LimitViolationType,
+    LimitViolationSuggestion,
+    SpendingTransaction,
+    DailySpendingSummary,
+    SpendingLimitChangedEvent,
+    SpendingLimitEventCallback,
+    LimitPreset,
+    DurationDisplay,
+} from './core/SpendingLimits.types.js';
+
 // Phase 3: Cross-Chain Exports
 export { CrossChainManager, crossChainManager } from './core/CrossChainManager.js';
 export { RelayerClient, createRelayerClient } from './core/RelayerClient.js';

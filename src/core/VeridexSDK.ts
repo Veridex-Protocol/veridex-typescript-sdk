@@ -16,6 +16,8 @@ import { RelayerClient, type SubmitSignedActionRequest } from './RelayerClient.j
 import { ChainDetector } from './ChainDetector.js';
 import { TransactionParser, type TransactionParserConfig } from './TransactionParser.js';
 import type { TransactionSummary } from './TransactionSummary.types.js';
+import { SpendingLimitsManager, type SpendingLimitsManagerConfig } from './SpendingLimitsManager.js';
+import type { SpendingLimits, FormattedSpendingLimits, LimitCheckResult, SpendingLimitConfig } from './SpendingLimits.types.js';
 import { ethers } from 'ethers';
 import { authenticateAndPrepare } from '../auth/prepareAuth.js';
 import { queryPortfolio } from '../queries/portfolio.js';
@@ -67,6 +69,7 @@ export class VeridexSDK {
     public readonly crossChain: CrossChainManager;
     public readonly sponsor: GasSponsor;
     public readonly transactionParser: TransactionParser;
+    public readonly spendingLimits: SpendingLimitsManager;
     private readonly chain: ChainClient;
     private readonly relayer?: RelayerClient;
     // TODO: Use relayerApiKey when relayer integration is complete (Issue #8)
@@ -140,6 +143,14 @@ export class VeridexSDK {
             // resolveEnsName: async (address) => { ... }
             // TODO: Integrate price oracle when available
             // getTokenPrice: async (token, chainId) => { ... }
+        });
+
+        // Initialize spending limits manager (Issue #27)
+        this.spendingLimits = new SpendingLimitsManager({
+            defaultDecimals: 18,
+            defaultSymbol: this.chain.getConfig().name.includes('Solana') ? 'SOL' : 'ETH',
+            rpcUrls: config.chainRpcUrls ?? {},
+            cacheTtl: 10000, // 10 seconds
         });
     }
 
@@ -753,6 +764,187 @@ export class VeridexSDK {
      */
     async getTransactionSummary(prepared: PreparedTransfer | PreparedBridge): Promise<TransactionSummary> {
         return this.transactionParser.parse(prepared);
+    }
+
+    // ============================================================================
+    // Spending Limits (Issue #27)
+    // ============================================================================
+
+    /**
+     * Get current spending limits for your vault
+     * 
+     * @example
+     * ```typescript
+     * const limits = await sdk.getSpendingLimits();
+     * console.log(`Daily remaining: ${limits.dailyRemaining}`);
+     * console.log(`Resets in: ${limits.timeUntilReset}ms`);
+     * ```
+     * 
+     * @param chainId - Optional chain ID (defaults to current chain)
+     * @returns Promise<SpendingLimits> with current limits and usage
+     */
+    async getSpendingLimits(chainId?: number): Promise<SpendingLimits> {
+        const vaultAddress = this.getVaultAddress();
+        const effectiveChainId = chainId ?? this.chain.getConfig().wormholeChainId;
+        const rpcUrl = this.chainRpcUrls?.[effectiveChainId] ?? this.chain.getConfig().rpcUrl;
+        
+        return this.spendingLimits.getSpendingLimits(vaultAddress, effectiveChainId, rpcUrl);
+    }
+
+    /**
+     * Get spending limits formatted for UI display
+     * 
+     * @example
+     * ```typescript
+     * const formatted = await sdk.getFormattedSpendingLimits();
+     * console.log(`${formatted.dailyUsedPercentage}% of daily limit used`);
+     * console.log(`Resets in: ${formatted.timeUntilReset}`);
+     * ```
+     */
+    async getFormattedSpendingLimits(chainId?: number): Promise<FormattedSpendingLimits> {
+        const vaultAddress = this.getVaultAddress();
+        const effectiveChainId = chainId ?? this.chain.getConfig().wormholeChainId;
+        const rpcUrl = this.chainRpcUrls?.[effectiveChainId] ?? this.chain.getConfig().rpcUrl;
+        
+        return this.spendingLimits.getFormattedSpendingLimits(vaultAddress, effectiveChainId, { rpcUrl });
+    }
+
+    /**
+     * Check if a transaction amount is within spending limits
+     * 
+     * @example
+     * ```typescript
+     * const check = await sdk.checkSpendingLimit(ethers.parseEther("1.0"));
+     * if (!check.allowed) {
+     *   console.log(check.message);
+     *   console.log('Suggestions:', check.suggestions);
+     * }
+     * ```
+     * 
+     * @param amount - Amount to check (in wei/base units)
+     * @param chainId - Optional chain ID
+     * @returns LimitCheckResult with allowed status and suggestions
+     */
+    async checkSpendingLimit(amount: bigint, chainId?: number): Promise<LimitCheckResult> {
+        const vaultAddress = this.getVaultAddress();
+        const effectiveChainId = chainId ?? this.chain.getConfig().wormholeChainId;
+        const rpcUrl = this.chainRpcUrls?.[effectiveChainId] ?? this.chain.getConfig().rpcUrl;
+        
+        return this.spendingLimits.checkTransactionLimit(vaultAddress, effectiveChainId, amount, { rpcUrl });
+    }
+
+    /**
+     * Prepare a transaction to update the daily spending limit
+     * Returns a PreparedTransfer that can be signed and executed
+     * 
+     * @example
+     * ```typescript
+     * // Set daily limit to 5 ETH
+     * const prepared = await sdk.prepareSetDailyLimit(ethers.parseEther("5.0"));
+     * const result = await sdk.executeTransfer(prepared, signer);
+     * ```
+     * 
+     * @param newLimit - New daily limit (0 = unlimited)
+     * @returns PreparedTransfer for signing
+     */
+    async prepareSetDailyLimit(newLimit: bigint): Promise<PreparedTransfer> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        const actionPayload = this.spendingLimits.prepareDailyLimitUpdate(newLimit);
+        const nonce = await this.getNonce();
+        const targetChain = this.chain.getConfig().wormholeChainId;
+        const challenge = buildChallenge(credential.keyHash, targetChain, nonce, actionPayload);
+        const messageFee = await this.getMessageFee();
+        
+        return {
+            params: {
+                targetChain,
+                token: 'native',
+                recipient: this.getVaultAddress(),
+                amount: 0n,
+            },
+            actionPayload,
+            nonce,
+            challenge,
+            messageFee,
+            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+        };
+    }
+
+    /**
+     * Prepare a transaction to pause the vault (emergency stop)
+     * Pausing prevents all withdrawals until unpaused
+     * 
+     * @example
+     * ```typescript
+     * const prepared = await sdk.preparePauseVault();
+     * const result = await sdk.executeTransfer(prepared, signer);
+     * ```
+     */
+    async preparePauseVault(): Promise<PreparedTransfer> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        const actionPayload = this.spendingLimits.preparePauseVault();
+        const nonce = await this.getNonce();
+        const targetChain = this.chain.getConfig().wormholeChainId;
+        const challenge = buildChallenge(credential.keyHash, targetChain, nonce, actionPayload);
+        const messageFee = await this.getMessageFee();
+        
+        return {
+            params: {
+                targetChain,
+                token: 'native',
+                recipient: this.getVaultAddress(),
+                amount: 0n,
+            },
+            actionPayload,
+            nonce,
+            challenge,
+            messageFee,
+            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+        };
+    }
+
+    /**
+     * Prepare a transaction to unpause the vault
+     * 
+     * @example
+     * ```typescript
+     * const prepared = await sdk.prepareUnpauseVault();
+     * const result = await sdk.executeTransfer(prepared, signer);
+     * ```
+     */
+    async prepareUnpauseVault(): Promise<PreparedTransfer> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        const actionPayload = this.spendingLimits.prepareUnpauseVault();
+        const nonce = await this.getNonce();
+        const targetChain = this.chain.getConfig().wormholeChainId;
+        const challenge = buildChallenge(credential.keyHash, targetChain, nonce, actionPayload);
+        const messageFee = await this.getMessageFee();
+        
+        return {
+            params: {
+                targetChain,
+                token: 'native',
+                recipient: this.getVaultAddress(),
+                amount: 0n,
+            },
+            actionPayload,
+            nonce,
+            challenge,
+            messageFee,
+            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+        };
     }
 
     /**
