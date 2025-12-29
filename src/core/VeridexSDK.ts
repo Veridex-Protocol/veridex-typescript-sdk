@@ -48,6 +48,10 @@ import type {
     ReceiveAddress,
     BridgeResult,
     PreparedBridge,
+    IdentityState,
+    AddBackupKeyResult,
+    RemoveKeyResult,
+    AuthorizedKey,
 } from './types.js';
 
 /** Expiration time for prepared transfers (5 minutes) */
@@ -1776,6 +1780,282 @@ export class VeridexSDK {
 
         // Create missing vaults
         return await this.createSponsoredVaultsOnAllChains();
+    }
+
+    // ==========================================================================
+    // Backup Passkey / Multi-Key Identity Methods (Issue #22)
+    // ==========================================================================
+
+    /**
+     * Get the identity state for the current passkey
+     * Returns information about the identity including key count and root status
+     * 
+     * @returns Identity state or null if no credential set
+     */
+    async getIdentityState(): Promise<IdentityState | null> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            return null;
+        }
+
+        const evmClient = this.chain as any;
+        if (typeof evmClient.getIdentityState !== 'function') {
+            throw new Error('Identity management not supported on this chain client');
+        }
+
+        return await evmClient.getIdentityState(credential.keyHash);
+    }
+
+    /**
+     * Get all authorized passkeys for the current identity
+     * 
+     * @returns Array of authorized keys with root status, or null if no credential
+     */
+    async listAuthorizedPasskeys(): Promise<AuthorizedKey[] | null> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            return null;
+        }
+
+        const evmClient = this.chain as any;
+        if (typeof evmClient.getIdentityState !== 'function') {
+            throw new Error('Identity management not supported on this chain client');
+        }
+
+        // Get the identity for this key
+        const state = await evmClient.getIdentityState(credential.keyHash);
+        if (!state.identity || state.identity === ethers.ZeroHash) {
+            // Key not registered, return just this key as pending
+            return [];
+        }
+
+        // Get all authorized keys for this identity
+        const keyHashes: string[] = await evmClient.getAuthorizedKeys(state.identity);
+        
+        // Map to AuthorizedKey with root status
+        return keyHashes.map(keyHash => ({
+            keyHash,
+            isRoot: keyHash === state.identity,
+        }));
+    }
+
+    /**
+     * Check if the current identity has backup passkeys registered
+     * Returns false if only one passkey (the root) is registered
+     * 
+     * @returns True if backup passkeys exist, false otherwise
+     */
+    async hasBackupPasskeys(): Promise<boolean> {
+        const state = await this.getIdentityState();
+        if (!state || state.keyCount === 0) {
+            return false;
+        }
+        return state.keyCount > 1;
+    }
+
+    /**
+     * Register a backup passkey for the current identity
+     * The backup passkey can be used to recover access if the primary is lost
+     * 
+     * @param newCredential The new passkey credential to add as backup
+     * @param signer Ethereum signer to pay gas (optional, uses relayer if not provided)
+     * @returns Result with transaction hash and sequence for cross-chain sync
+     */
+    async addBackupPasskey(
+        newCredential: PasskeyCredential,
+        signer?: any
+    ): Promise<AddBackupKeyResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+        }
+
+        const evmClient = this.chain as any;
+        if (typeof evmClient.addBackupKey !== 'function') {
+            throw new Error('Backup passkey management not supported on this chain client');
+        }
+
+        // Get identity state to ensure we're within limits
+        const state = await evmClient.getIdentityState(credential.keyHash);
+        if (state.keyCount >= state.maxKeys) {
+            throw new Error(`Maximum keys (${state.maxKeys}) already registered for this identity`);
+        }
+
+        // Check if the new key is already authorized
+        const isAlreadyAuthorized = await evmClient.isAuthorizedForIdentity(
+            state.identity,
+            newCredential.keyHash
+        );
+        if (isAlreadyAuthorized) {
+            throw new Error('This passkey is already authorized for this identity');
+        }
+
+        if (!state.identity || state.identity === ethers.ZeroHash) {
+            throw new Error('Identity not registered. Call registerIdentity() first.');
+        }
+
+        // Nonce for key-management is stored on the *identity* (not necessarily the signing key)
+        const nonce = await this.chain.getNonce(state.identity);
+
+        // Challenge = abi.encodePacked("VERIDEX_ADD_KEY", identityKeyHash, newKeyHash, nonce)
+        const packedChallenge = ethers.solidityPacked(
+            ['string', 'bytes32', 'bytes32', 'uint256'],
+            ['VERIDEX_ADD_KEY', state.identity, newCredential.keyHash, nonce]
+        );
+
+        const signature = await this.passkey.sign(ethers.getBytes(packedChallenge));
+
+        if (!signer) {
+            throw new Error('Signer required for backup key registration');
+        }
+
+        // Call Hub contract to add backup key
+        const { receipt, sequence } = await evmClient.addBackupKey(
+            signature,
+            credential.publicKeyX,
+            credential.publicKeyY,
+            newCredential.publicKeyX,
+            newCredential.publicKeyY,
+            nonce,
+            signer
+        );
+
+        // Get updated key count
+        const updatedState = await evmClient.getIdentityState(credential.keyHash);
+
+        return {
+            transactionHash: receipt.hash,
+            sequence,
+            identity: state.identity,
+            newKeyHash: newCredential.keyHash,
+            keyCount: updatedState.keyCount,
+        };
+    }
+
+    /**
+     * Remove a passkey from the current identity
+     * Cannot remove the last remaining passkey
+     * 
+     * @param keyToRemove Hash of the passkey to remove
+     * @param signer Ethereum signer to pay gas
+     * @returns Result with transaction hash and sequence for cross-chain sync
+     */
+    async removePasskey(
+        keyToRemove: string,
+        signer: any
+    ): Promise<RemoveKeyResult> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+        }
+
+        const evmClient = this.chain as any;
+        if (typeof evmClient.removeKey !== 'function') {
+            throw new Error('Backup passkey management not supported on this chain client');
+        }
+
+        // Get identity state
+        const state = await evmClient.getIdentityState(credential.keyHash);
+        if (state.keyCount <= 1) {
+            throw new Error('Cannot remove the last passkey. At least one must remain.');
+        }
+
+        // Check if the key to remove is actually authorized
+        const isAuthorized = await evmClient.isAuthorizedForIdentity(
+            state.identity,
+            keyToRemove
+        );
+        if (!isAuthorized) {
+            throw new Error('The specified passkey is not authorized for this identity');
+        }
+
+        if (!state.identity || state.identity === ethers.ZeroHash) {
+            throw new Error('Identity not registered. Call registerIdentity() first.');
+        }
+
+        // Nonce for key-management is stored on the *identity*
+        const nonce = await this.chain.getNonce(state.identity);
+
+        // Challenge = abi.encodePacked("VERIDEX_REMOVE_KEY", identityKeyHash, keyToRemove, nonce)
+        const packedChallenge = ethers.solidityPacked(
+            ['string', 'bytes32', 'bytes32', 'uint256'],
+            ['VERIDEX_REMOVE_KEY', state.identity, keyToRemove, nonce]
+        );
+
+        const signature = await this.passkey.sign(ethers.getBytes(packedChallenge));
+
+        // Call Hub contract to remove key
+        const { receipt, sequence } = await evmClient.removeKey(
+            signature,
+            credential.publicKeyX,
+            credential.publicKeyY,
+            keyToRemove,
+            nonce,
+            signer
+        );
+
+        // Get updated key count
+        const updatedState = await evmClient.getIdentityState(credential.keyHash);
+
+        return {
+            transactionHash: receipt.hash,
+            sequence,
+            identity: state.identity,
+            removedKeyHash: keyToRemove,
+            keyCount: updatedState.keyCount,
+        };
+    }
+
+    /**
+     * Check if a specific passkey is authorized for the current identity
+     * 
+     * @param keyHash Hash of the passkey to check
+     * @returns True if authorized, false otherwise
+     */
+    async isPasskeyAuthorized(keyHash: string): Promise<boolean> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            return false;
+        }
+
+        const evmClient = this.chain as any;
+        if (typeof evmClient.getIdentityState !== 'function') {
+            throw new Error('Identity management not supported on this chain client');
+        }
+
+        const state = await evmClient.getIdentityState(credential.keyHash);
+        if (!state.identity || state.identity === ethers.ZeroHash) {
+            return false;
+        }
+
+        return await evmClient.isAuthorizedForIdentity(state.identity, keyHash);
+    }
+
+    /**
+     * Get the identity hash for the current passkey
+     * This is the keyHash of the first/root passkey registered
+     * 
+     * @returns Identity hash or null if no credential/identity
+     */
+    async getIdentity(): Promise<string | null> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            return null;
+        }
+
+        const evmClient = this.chain as any;
+        if (typeof evmClient.getIdentityForKey !== 'function') {
+            // Fallback: return keyHash as identity (single-key mode)
+            return credential.keyHash;
+        }
+
+        const identity = await evmClient.getIdentityForKey(credential.keyHash);
+        if (identity === ethers.ZeroHash) {
+            // Not registered yet, return current keyHash
+            return credential.keyHash;
+        }
+
+        return identity;
     }
 
     getCredential(): PasskeyCredential | null {

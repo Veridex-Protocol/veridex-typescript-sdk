@@ -195,6 +195,12 @@ export type {
     CrossChainFees,
     PreparedBridge,
     BridgeResult,
+
+    // Issue #22: Backup Passkey Types
+    IdentityState,
+    AddBackupKeyResult,
+    RemoveKeyResult,
+    AuthorizedKey,
 } from './core/types.js';
 
 // Query Types (Issue #9/#10/#11/#12) - from types.js

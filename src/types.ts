@@ -209,6 +209,67 @@ export interface RevokeSessionParams {
   requireUV: boolean;
 }
 
+// ============================================================================
+// Backup Passkey / Multi-Key Identity Types (Issue #22)
+// ============================================================================
+
+/**
+ * Identity state for multi-key management
+ * First passkey registered becomes the immutable identity root
+ */
+export interface IdentityState {
+  /** Identity key hash (first passkey's keyHash) */
+  identity: string;
+  /** Number of authorized keys */
+  keyCount: number;
+  /** Maximum allowed keys per identity */
+  maxKeys: number;
+  /** Whether the specified key is the root identity */
+  isRoot: boolean;
+}
+
+/**
+ * Result from registering a backup passkey
+ */
+export interface AddBackupKeyResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity the key was added to */
+  identity: string;
+  /** The new key hash that was added */
+  newKeyHash: string;
+  /** Total number of keys after addition */
+  keyCount: number;
+}
+
+/**
+ * Result from removing a passkey
+ */
+export interface RemoveKeyResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity the key was removed from */
+  identity: string;
+  /** The key hash that was removed */
+  removedKeyHash: string;
+  /** Remaining number of keys after removal */
+  keyCount: number;
+}
+
+/**
+ * Authorized key information
+ */
+export interface AuthorizedKey {
+  /** Key hash of the authorized passkey */
+  keyHash: string;
+  /** Whether this key is the root identity key */
+  isRoot: boolean;
+}
+
 export interface ExecuteAction {
   type: 'execute';
   target: string;

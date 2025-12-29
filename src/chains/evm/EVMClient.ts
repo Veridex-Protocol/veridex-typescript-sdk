@@ -81,6 +81,16 @@ const HUB_ABI = [
     'function revokeSession(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 sessionKeyHash, bool requireUV) external',
     'function getUserSessions(bytes32 userKeyHash) view returns (tuple(bytes32 sessionKeyHash, uint256 expiry, uint256 maxValue, bool revoked)[])',
     'function getUserSessionCount(bytes32 userKeyHash) view returns (uint256)',
+    // Issue #22: Backup Passkey / Multi-Key Identity management
+    'function registerIdentity(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY) external',
+    'function addBackupKey(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, uint256 newPublicKeyX, uint256 newPublicKeyY, uint256 nonce) external payable returns (uint64 sequence)',
+    'function removeKey(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 keyToRemove, uint256 nonce) external payable returns (uint64 sequence)',
+    'function getIdentityForKey(bytes32 keyHash) view returns (bytes32)',
+    'function getAuthorizedKeys(bytes32 identity) view returns (bytes32[])',
+    'function getAuthorizedKeyCount(bytes32 identity) view returns (uint256)',
+    'function isAuthorizedForIdentity(bytes32 identity, bytes32 keyHash) view returns (bool)',
+    'function isIdentityRoot(bytes32 keyHash) view returns (bool)',
+    'function getIdentityState(bytes32 keyHash) view returns (bytes32 identity, uint256 keyCount, uint256 maxKeys, bool isRoot)',
 ];
 
 // ============================================================================
@@ -848,5 +858,281 @@ export class EVMClient implements ChainClient {
     ): Promise<ethers.TransactionReceipt | null> {
         return await this.provider.waitForTransaction(hash, confirmations);
     }
-}
 
+    // ==========================================================================
+    // Backup Passkey / Multi-Key Identity Methods (Issue #22)
+    // ==========================================================================
+
+    /**
+     * Get the identity for a given key hash
+     * Returns zero hash if key is not registered to any identity
+     * 
+     * @param keyHash Hash of the passkey to look up
+     * @returns Identity (first passkey's keyHash) or zero hash
+     */
+    async getIdentityForKey(keyHash: string): Promise<string> {
+        try {
+            return await this.hubContract.getIdentityForKey(keyHash);
+        } catch (error) {
+            return ethers.ZeroHash;
+        }
+    }
+
+    /**
+     * Get all authorized keys for an identity
+     * 
+     * @param identity The identity key hash (first passkey's keyHash)
+     * @returns Array of authorized key hashes
+     */
+    async getAuthorizedKeys(identity: string): Promise<string[]> {
+        try {
+            return await this.hubContract.getAuthorizedKeys(identity);
+        } catch (error) {
+            return [];
+        }
+    }
+
+    /**
+     * Get count of authorized keys for an identity
+     * 
+     * @param identity The identity key hash
+     * @returns Number of authorized keys
+     */
+    async getAuthorizedKeyCount(identity: string): Promise<number> {
+        try {
+            const count = await this.hubContract.getAuthorizedKeyCount(identity);
+            return Number(count);
+        } catch (error) {
+            return 0;
+        }
+    }
+
+    /**
+     * Check if a key is authorized for an identity
+     * 
+     * @param identity The identity key hash
+     * @param keyHash The key hash to check
+     * @returns Whether the key is authorized
+     */
+    async isAuthorizedForIdentity(identity: string, keyHash: string): Promise<boolean> {
+        try {
+            return await this.hubContract.isAuthorizedForIdentity(identity, keyHash);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if a key is the root identity key
+     * 
+     * @param keyHash The key hash to check
+     * @returns Whether the key is a root identity
+     */
+    async isIdentityRootKey(keyHash: string): Promise<boolean> {
+        try {
+            return await this.hubContract.isIdentityRoot(keyHash);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Get comprehensive identity state for a key
+     * 
+     * @param keyHash Hash of any key in the identity
+     * @returns Identity state including count, max, and root status
+     */
+    async getIdentityState(keyHash: string): Promise<import('../../types.js').IdentityState> {
+        try {
+            const result = await this.hubContract.getIdentityState(keyHash);
+            return {
+                identity: result[0],
+                keyCount: Number(result[1]),
+                maxKeys: Number(result[2]),
+                isRoot: result[3],
+            };
+        } catch (error) {
+            // Fallback for keys not registered
+            return {
+                identity: ethers.ZeroHash,
+                keyCount: 0,
+                maxKeys: 5,
+                isRoot: false,
+            };
+        }
+    }
+
+    /**
+     * Register a new identity with the first passkey
+     * This makes the passkey the root identity key
+     * 
+     * @param signature WebAuthn signature
+     * @param publicKeyX Passkey public key X coordinate
+     * @param publicKeyY Passkey public key Y coordinate
+     * @param signer Ethereum signer to pay gas
+     * @returns Transaction receipt and identity hash
+     */
+    async registerIdentity(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; identity: string }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const tx = await hubWithSigner.registerIdentity(
+            authTuple,
+            publicKeyX,
+            publicKeyY
+        );
+
+        const receipt = await tx.wait();
+        
+        // Compute identity (keyHash of the registered key)
+        const keyHash = ethers.keccak256(
+            ethers.solidityPacked(['uint256', 'uint256'], [publicKeyX, publicKeyY])
+        );
+
+        return { receipt, identity: keyHash };
+    }
+
+    /**
+     * Add a backup passkey to an existing identity
+     * Requires WebAuthn signature from an authorized key
+     * 
+     * @param signature WebAuthn signature from existing authorized key
+     * @param publicKeyX Existing key's X coordinate
+     * @param publicKeyY Existing key's Y coordinate
+     * @param newPublicKeyX New backup key's X coordinate
+     * @param newPublicKeyY New backup key's Y coordinate
+     * @param nonce Current nonce for the signing key
+     * @param signer Ethereum signer to pay gas
+     * @returns Transaction receipt and sequence number
+     */
+    async addBackupKey(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        newPublicKeyX: bigint,
+        newPublicKeyY: bigint,
+        nonce: bigint,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.addBackupKey(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            newPublicKeyX,
+            newPublicKeyY,
+            nonce,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+
+        // Extract sequence from Dispatch event
+        let sequence = 0n;
+        for (const log of receipt.logs) {
+            try {
+                const parsed = this.hubContract.interface.parseLog({
+                    topics: log.topics as string[],
+                    data: log.data,
+                });
+                if (parsed?.name === 'Dispatched') {
+                    sequence = BigInt(parsed.args[3]); // sequence is 4th arg
+                    break;
+                }
+            } catch {
+                // Not a Hub event, skip
+            }
+        }
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Remove a passkey from an identity
+     * Cannot remove the last remaining key
+     * 
+     * @param signature WebAuthn signature from an authorized key
+     * @param publicKeyX Signing key's X coordinate
+     * @param publicKeyY Signing key's Y coordinate
+     * @param keyToRemove Hash of the key to remove
+     * @param nonce Current nonce for the signing key
+     * @param signer Ethereum signer to pay gas
+     * @returns Transaction receipt and sequence number
+     */
+    async removeKey(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        keyToRemove: string,
+        nonce: bigint,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.removeKey(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            keyToRemove,
+            nonce,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+
+        // Extract sequence from Dispatch event
+        let sequence = 0n;
+        for (const log of receipt.logs) {
+            try {
+                const parsed = this.hubContract.interface.parseLog({
+                    topics: log.topics as string[],
+                    data: log.data,
+                });
+                if (parsed?.name === 'Dispatched') {
+                    sequence = BigInt(parsed.args[3]);
+                    break;
+                }
+            } catch {
+                // Not a Hub event, skip
+            }
+        }
+
+        return { receipt, sequence };
+    }
+}
