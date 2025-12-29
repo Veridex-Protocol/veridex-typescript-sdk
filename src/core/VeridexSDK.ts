@@ -14,6 +14,8 @@ import {
 } from './CrossChainManager.js';
 import { RelayerClient, type SubmitSignedActionRequest } from './RelayerClient.js';
 import { ChainDetector } from './ChainDetector.js';
+import { TransactionParser, type TransactionParserConfig } from './TransactionParser.js';
+import type { TransactionSummary } from './TransactionSummary.types.js';
 import { ethers } from 'ethers';
 import { authenticateAndPrepare } from '../auth/prepareAuth.js';
 import { queryPortfolio } from '../queries/portfolio.js';
@@ -64,6 +66,7 @@ export class VeridexSDK {
     public readonly transactions: TransactionTracker;
     public readonly crossChain: CrossChainManager;
     public readonly sponsor: GasSponsor;
+    public readonly transactionParser: TransactionParser;
     private readonly chain: ChainClient;
     private readonly relayer?: RelayerClient;
     // TODO: Use relayerApiKey when relayer integration is complete (Issue #8)
@@ -129,6 +132,15 @@ export class VeridexSDK {
                 apiKey: config.relayerApiKey,
             });
         }
+
+        // Initialize transaction parser for human-readable summaries (Issue #26)
+        this.transactionParser = new TransactionParser({
+            defaultChainId: this.chain.getConfig().wormholeChainId,
+            // TODO: Integrate ENS resolution via relayer when available
+            // resolveEnsName: async (address) => { ... }
+            // TODO: Integrate price oracle when available
+            // getTokenPrice: async (token, chainId) => { ... }
+        });
     }
 
     getChainConfig() {
@@ -705,6 +717,42 @@ export class VeridexSDK {
             preparedAt: Date.now(),
             expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
         };
+    }
+
+    /**
+     * Get a human-readable summary of a prepared transfer (Issue #26)
+     * 
+     * Use this to show users what they're signing before biometric authentication.
+     * The summary includes:
+     * - Action type (transfer, bridge, execute, config)
+     * - Human-readable amounts (not wei)
+     * - Recipient display (truncated address, ENS if available)
+     * - Chain information
+     * - Risk warnings for unusual transactions
+     * - Gas cost breakdown
+     * - Expiration countdown
+     * 
+     * @example
+     * ```typescript
+     * const prepared = await sdk.prepareTransfer({
+     *   recipient: '0x123...',
+     *   amount: '1000000000000000000', // 1 ETH in wei
+     *   tokenAddress: NATIVE_TOKEN_ADDRESS,
+     *   targetChain: 10004, // Base Sepolia
+     * });
+     * 
+     * const summary = await sdk.getTransactionSummary(prepared);
+     * console.log(summary.title); // "Transfer"
+     * console.log(summary.description); // "Send 1.0 ETH to 0x123...abc"
+     * console.log(summary.details.formattedAmount); // "1.0"
+     * console.log(summary.risks); // [{ type: 'large_transaction', level: 'high', ... }]
+     * ```
+     * 
+     * @param prepared - PreparedTransfer or PreparedBridge from prepare methods
+     * @returns Promise<TransactionSummary> with human-readable details
+     */
+    async getTransactionSummary(prepared: PreparedTransfer | PreparedBridge): Promise<TransactionSummary> {
+        return this.transactionParser.parse(prepared);
     }
 
     /**

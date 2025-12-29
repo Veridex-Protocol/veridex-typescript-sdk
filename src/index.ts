@@ -85,6 +85,15 @@ export { BalanceManager } from './core/BalanceManager.js';
 export { TransactionTracker, getExplorerUrl, formatTransactionState } from './core/TransactionTracker.js';
 export { ChainDetector, createChainDetector } from './core/ChainDetector.js';
 
+// Issue #26: Human-Readable Transaction Summaries
+export { 
+    TransactionParser, 
+    createTransactionParser,
+    createAuditEntry,
+    logTransactionSummary,
+} from './core/TransactionParser.js';
+export type { TransactionAuditEntry } from './core/TransactionParser.js';
+
 // Phase 3: Cross-Chain Exports
 export { CrossChainManager, crossChainManager } from './core/CrossChainManager.js';
 export { RelayerClient, createRelayerClient } from './core/RelayerClient.js';
@@ -202,6 +211,25 @@ export type {
     RemoveKeyResult,
     AuthorizedKey,
 } from './core/types.js';
+
+// Issue #26: Human-Readable Transaction Summary Types
+export type {
+    ActionDisplayType,
+    TokenDisplay,
+    RecipientDisplay,
+    ChainDisplay,
+    RiskLevel,
+    RiskWarning,
+    RiskWarningType,
+    TransferDetails,
+    BridgeDetails,
+    ExecuteDetails,
+    ConfigDetails,
+    ActionDetails,
+    TransactionSummary,
+    TransactionParserConfig,
+} from './core/TransactionSummary.types.js';
+export { CHAIN_DISPLAY_INFO, getChainDisplay, getConfigTypeName } from './core/TransactionSummary.types.js';
 
 // Issue #23: Social Recovery Types
 export type {
