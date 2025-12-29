@@ -468,9 +468,10 @@ export class SpendingLimitsManager {
   }
   
   /**
-   * Emit a limit change event to all listeners
+   * Notify listeners of a limit change event
+   * Call this after a successful limit update transaction
    */
-  private emitLimitChange(event: SpendingLimitChangedEvent): void {
+  notifyLimitChange(event: SpendingLimitChangedEvent): void {
     for (const listener of this.eventListeners) {
       try {
         listener(event);

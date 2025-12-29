@@ -14,10 +14,10 @@ import {
 } from './CrossChainManager.js';
 import { RelayerClient, type SubmitSignedActionRequest } from './RelayerClient.js';
 import { ChainDetector } from './ChainDetector.js';
-import { TransactionParser, type TransactionParserConfig } from './TransactionParser.js';
+import { TransactionParser } from './TransactionParser.js';
 import type { TransactionSummary } from './TransactionSummary.types.js';
-import { SpendingLimitsManager, type SpendingLimitsManagerConfig } from './SpendingLimitsManager.js';
-import type { SpendingLimits, FormattedSpendingLimits, LimitCheckResult, SpendingLimitConfig } from './SpendingLimits.types.js';
+import { SpendingLimitsManager } from './SpendingLimitsManager.js';
+import type { SpendingLimits, FormattedSpendingLimits, LimitCheckResult } from './SpendingLimits.types.js';
 import { ethers } from 'ethers';
 import { authenticateAndPrepare } from '../auth/prepareAuth.js';
 import { queryPortfolio } from '../queries/portfolio.js';
