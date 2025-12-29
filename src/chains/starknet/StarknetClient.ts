@@ -200,23 +200,8 @@ export class StarknetClient implements ChainClient {
         };
     }
 
-    async getVaultAddress(userKeyHash: string): Promise<string | null> {
-        /**
-         * Query Starknet spoke for vault address
-         * Vaults on Starknet are created via Hub dispatch + bridge attestation
-         */
-        if (!this.config.contracts.hub) {
-            return this.computeVaultAddress(userKeyHash);
-        }
-
-        try {
-            // Query spoke contract for vault address
-            // Spoke uses keyHash-based vault derivation
-            return this.computeVaultAddress(userKeyHash);
-        } catch {
-            return this.computeVaultAddress(userKeyHash);
-        }
-    }
+    // Note: getVaultAddress is now defined in the Social Recovery section below
+    // with enhanced spoke contract querying support.
 
     computeVaultAddress(userKeyHash: string): string {
         /**
@@ -498,5 +483,96 @@ export class StarknetClient implements ChainClient {
         const combined = Buffer.concat([keyHashBuffer, targetChainBuffer, payloadBuffer, nonceBuffer]);
         const hash = createHash('sha256').update(combined).digest('hex');
         return '0x' + hash;
+    }
+
+    // ============================================================================
+    // Social Recovery Methods (Issue #23)
+    // ============================================================================
+    // 
+    // Note: Social recovery is managed on the Hub chain (EVM).
+    // Starknet spokes receive and execute recovery VAAs broadcast from the Hub.
+    // The relayer service handles submitting recovery transactions to Starknet.
+    //
+    // SDK users should use EVMClient methods for guardian management and
+    // recovery initiation on the Hub chain.
+    // ============================================================================
+
+    /**
+     * Get vault address by owner key hash
+     * 
+     * @param ownerKeyHash - Owner's passkey hash
+     * @returns Vault address on Starknet (felt252 as hex string)
+     */
+    async getVaultAddress(ownerKeyHash: string): Promise<string | null> {
+        try {
+            const spokeAddress = this.config.contracts.hub;
+            if (!spokeAddress) {
+                throw new Error('Spoke contract address not configured');
+            }
+
+            // Call get_vault on spoke contract
+            const result = await this.provider.callContract({
+                contractAddress: spokeAddress,
+                entrypoint: 'get_vault',
+                calldata: [ownerKeyHash],
+            });
+
+            // result[0] is the vault address (0 if not found)
+            const vaultAddress = result[0];
+            if (vaultAddress === '0x0' || vaultAddress === '0') {
+                return null;
+            }
+
+            return vaultAddress;
+        } catch (error) {
+            console.error('Error getting vault address:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Check if vault exists and get basic info
+     * 
+     * @param ownerKeyHash - Owner's passkey hash  
+     * @returns Vault info or null if not found
+     */
+    async getVaultInfo(ownerKeyHash: string): Promise<{
+        address: string;
+        ownerKeyHash: string;
+    } | null> {
+        const vaultAddress = await this.getVaultAddress(ownerKeyHash);
+        if (!vaultAddress) {
+            return null;
+        }
+
+        return {
+            address: vaultAddress,
+            ownerKeyHash,
+        };
+    }
+
+    /**
+     * Check if spoke contract is paused
+     * 
+     * @returns Whether the protocol is paused
+     */
+    async isProtocolPaused(): Promise<boolean> {
+        try {
+            const spokeAddress = this.config.contracts.hub;
+            if (!spokeAddress) {
+                throw new Error('Spoke contract address not configured');
+            }
+
+            const result = await this.provider.callContract({
+                contractAddress: spokeAddress,
+                entrypoint: 'is_paused',
+                calldata: [],
+            });
+
+            return result[0] === '0x1' || result[0] === '1';
+        } catch (error) {
+            console.error('Error checking pause status:', error);
+            return false;
+        }
     }
 }

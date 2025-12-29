@@ -431,4 +431,171 @@ export class SuiClient implements ChainClient {
         const hash = createHash('sha256').update(combined).digest('hex');
         return '0x' + hash;
     }
+
+    // ============================================================================
+    // Social Recovery Methods (Issue #23)
+    // ============================================================================
+    // 
+    // Note: Social recovery is managed on the Hub chain (EVM).
+    // Sui spokes receive and execute recovery VAAs broadcast from the Hub.
+    // The relayer service handles submitting recovery transactions to Sui.
+    //
+    // SDK users should use EVMClient methods for guardian management and
+    // recovery initiation on the Hub chain.
+    // ============================================================================
+
+    /**
+     * Get vault object ID by owner key hash
+     * 
+     * @param ownerKeyHash - Owner's passkey hash (32 bytes as hex)
+     * @param configObjectId - Shared Config object ID
+     * @param registryObjectId - Shared VaultRegistry object ID
+     * @returns Vault object ID or null if not found
+     */
+    async getVaultId(
+        ownerKeyHash: string,
+        registryObjectId: string
+    ): Promise<string | null> {
+        try {
+            // Query the VaultRegistry table for the owner_key_hash
+            // The registry maps owner_key_hash -> vault ID
+            const registryObject = await this.client.getObject({
+                id: registryObjectId,
+                options: { showContent: true },
+            });
+
+            if (!registryObject.data?.content) {
+                return null;
+            }
+
+            // For a proper implementation, we'd need to query dynamic fields
+            // or use a Move view function. This is a placeholder showing the pattern.
+            console.warn('getVaultId requires dynamic field query - use Move view function');
+            return null;
+        } catch (error) {
+            console.error('Error getting vault ID:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get vault owner key hash from vault object
+     * 
+     * @param vaultObjectId - Vault object ID
+     * @returns Owner key hash as hex string
+     */
+    async getVaultOwner(vaultObjectId: string): Promise<string | null> {
+        try {
+            const vaultObject = await this.client.getObject({
+                id: vaultObjectId,
+                options: { showContent: true },
+            });
+
+            if (!vaultObject.data?.content || vaultObject.data.content.dataType !== 'moveObject') {
+                return null;
+            }
+
+            const fields = vaultObject.data.content.fields as Record<string, unknown>;
+            const ownerKeyHash = fields['owner_key_hash'] as number[] | undefined;
+
+            if (!ownerKeyHash) {
+                return null;
+            }
+
+            // Convert byte array to hex string
+            return '0x' + Buffer.from(ownerKeyHash).toString('hex');
+        } catch (error) {
+            console.error('Error getting vault owner:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get authorized signers for a vault
+     * 
+     * @param vaultObjectId - Vault object ID
+     * @returns Array of authorized signer key hashes
+     */
+    async getAuthorizedSigners(vaultObjectId: string): Promise<string[]> {
+        try {
+            const vaultObject = await this.client.getObject({
+                id: vaultObjectId,
+                options: { showContent: true },
+            });
+
+            if (!vaultObject.data?.content || vaultObject.data.content.dataType !== 'moveObject') {
+                return [];
+            }
+
+            const fields = vaultObject.data.content.fields as Record<string, unknown>;
+            const authorizedSigners = fields['authorized_signers'] as number[][] | undefined;
+
+            if (!authorizedSigners) {
+                return [];
+            }
+
+            // Convert each byte array to hex string
+            return authorizedSigners.map(signer => 
+                '0x' + Buffer.from(signer).toString('hex')
+            );
+        } catch (error) {
+            console.error('Error getting authorized signers:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Check if a VAA has been processed (for replay protection)
+     * 
+     * @param vaaHash - VAA hash as hex string
+     * @param processedVaasObjectId - ProcessedVAAs shared object ID
+     * @returns Whether the VAA has been processed
+     */
+    async isVaaProcessed(
+        vaaHash: string,
+        processedVaasObjectId: string
+    ): Promise<boolean> {
+        try {
+            const processedObject = await this.client.getObject({
+                id: processedVaasObjectId,
+                options: { showContent: true },
+            });
+
+            if (!processedObject.data?.content) {
+                return false;
+            }
+
+            // Would need to query dynamic field for vaaHash key
+            console.warn('isVaaProcessed requires dynamic field query');
+            return false;
+        } catch (error) {
+            console.error('Error checking VAA status:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Check if protocol is paused
+     * 
+     * @param configObjectId - Config shared object ID
+     * @returns Whether the protocol is paused
+     */
+    async isProtocolPaused(configObjectId: string): Promise<boolean> {
+        try {
+            const configObject = await this.client.getObject({
+                id: configObjectId,
+                options: { showContent: true },
+            });
+
+            if (!configObject.data?.content || configObject.data.content.dataType !== 'moveObject') {
+                return false;
+            }
+
+            const fields = configObject.data.content.fields as Record<string, unknown>;
+            return fields['paused'] === true;
+        } catch (error) {
+            console.error('Error checking pause status:', error);
+            return false;
+        }
+    }
 }

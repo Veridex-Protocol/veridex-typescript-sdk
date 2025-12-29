@@ -473,4 +473,113 @@ export class SolanaClient implements ChainClient {
             maxSupportedTransactionVersion: 0,
         });
     }
+
+    // ============================================================================
+    // Social Recovery Methods (Issue #23)
+    // ============================================================================
+    // 
+    // Note: Social recovery is managed on the Hub chain (EVM).
+    // Solana spokes receive and execute recovery VAAs broadcast from the Hub.
+    // These methods are placeholders that indicate spoke-only chains don't
+    // initiate recovery - they only execute recovery instructions from Hub VAAs.
+    //
+    // The relayer service handles:
+    // 1. Fetching recovery VAAs from Wormhole guardians
+    // 2. Submitting execute_recovery instruction to Solana spoke
+    // 3. Processing OwnerRecovered events
+    //
+    // SDK users should use EVMClient methods for guardian management and
+    // recovery initiation on the Hub chain.
+    // ============================================================================
+
+    /**
+     * Check if a recovery VAA has been executed on this spoke
+     * 
+     * @param vaaHash - Hash of the recovery VAA
+     * @returns Whether the VAA has been processed
+     */
+    async isRecoveryExecuted(vaaHash: string): Promise<boolean> {
+        try {
+            // Derive VAA record PDA
+            const vaaHashBuffer = Buffer.from(vaaHash.replace('0x', ''), 'hex');
+            const [vaaRecordPda] = PublicKey.findProgramAddressSync(
+                [Buffer.from('vaa_record'), vaaHashBuffer],
+                this.programId
+            );
+
+            const accountInfo = await this.connection.getAccountInfo(vaaRecordPda);
+            if (!accountInfo || accountInfo.data.length < 9) {
+                return false;
+            }
+
+            // First byte after discriminator is 'processed' bool
+            return accountInfo.data[8] === 1;
+        } catch (error) {
+            console.error('Error checking recovery execution:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Get vault owner after potential recovery
+     * 
+     * @param vaultAddress - Vault address to check
+     * @returns Current owner key hash
+     */
+    async getVaultOwner(vaultAddress: string): Promise<string> {
+        try {
+            const accountInfo = await this.connection.getAccountInfo(new PublicKey(vaultAddress));
+            if (!accountInfo || accountInfo.data.length < 40) {
+                throw new Error('Vault not found');
+            }
+
+            // Owner key hash is stored after discriminator (8 bytes) at offset 8-40
+            const ownerKeyHash = accountInfo.data.slice(8, 40);
+            return '0x' + ownerKeyHash.toString('hex');
+        } catch (error) {
+            console.error('Error getting vault owner:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get authorized signers for a vault
+     * 
+     * @param vaultAddress - Vault address to check
+     * @returns Array of authorized signer key hashes
+     */
+    async getAuthorizedSigners(vaultAddress: string): Promise<string[]> {
+        try {
+            const accountInfo = await this.connection.getAccountInfo(new PublicKey(vaultAddress));
+            if (!accountInfo || accountInfo.data.length < 235) {
+                throw new Error('Vault not found');
+            }
+
+            // Vault layout:
+            // 8 bytes discriminator
+            // 32 bytes owner_key_hash
+            // 8 bytes nonce
+            // 1 byte paused
+            // 8 bytes daily_limit
+            // 8 bytes daily_spent
+            // 8 bytes day_start
+            // 1 byte bump
+            // 1 byte authorized_signer_count
+            // 5 * 32 bytes authorized_signers
+
+            const signerCount = accountInfo.data[66]; // offset 8+32+8+1+8+8+1 = 66
+            const signers: string[] = [];
+
+            for (let i = 0; i < signerCount; i++) {
+                const offset = 67 + (i * 32); // Start of authorized_signers array
+                const keyHash = accountInfo.data.slice(offset, offset + 32);
+                signers.push('0x' + keyHash.toString('hex'));
+            }
+
+            return signers;
+        } catch (error) {
+            console.error('Error getting authorized signers:', error);
+            throw error;
+        }
+    }
 }

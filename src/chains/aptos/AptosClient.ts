@@ -456,4 +456,117 @@ export class AptosClient implements ChainClient {
             checkSuccess: true,
         });
     }
+
+    // ============================================================================
+    // Social Recovery Methods (Issue #23)
+    // ============================================================================
+    // 
+    // Note: Social recovery is managed on the Hub chain (EVM).
+    // Aptos spokes receive and execute recovery VAAs broadcast from the Hub.
+    // The relayer service handles submitting recovery transactions to Aptos.
+    //
+    // SDK users should use EVMClient methods for guardian management and
+    // recovery initiation on the Hub chain.
+    // ============================================================================
+
+    /**
+     * Get vault resource for an owner
+     * 
+     * @param ownerKeyHash - Owner's passkey hash (32 bytes as hex)
+     * @returns Vault resource data or null if not found
+     */
+    async getVaultResource(ownerKeyHash: string): Promise<{
+        ownerKeyHash: string;
+        authorizedSigners: string[];
+        nonce: bigint;
+    } | null> {
+        try {
+            const vaultAddress = this.computeVaultAddressFromHash(ownerKeyHash);
+
+            const resource = await this.client.getAccountResource(
+                vaultAddress,
+                `${this.moduleAddress}::vault::Vault`
+            );
+
+            if (!resource || !resource.data) {
+                return null;
+            }
+
+            const data = resource.data as any;
+            return {
+                ownerKeyHash: data.owner_key_hash || ownerKeyHash,
+                authorizedSigners: data.authorized_signers || [],
+                nonce: BigInt(data.nonce || 0),
+            };
+        } catch (error) {
+            console.error('Error getting vault resource:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get authorized signers for a vault
+     * 
+     * @param ownerKeyHash - Owner's passkey hash (32 bytes as hex)
+     * @returns Array of authorized signer key hashes
+     */
+    async getAuthorizedSigners(ownerKeyHash: string): Promise<string[]> {
+        const vaultResource = await this.getVaultResource(ownerKeyHash);
+        return vaultResource?.authorizedSigners || [];
+    }
+
+    /**
+     * Check if a VAA has been processed (for replay protection)
+     * 
+     * @param vaaHash - VAA hash as hex string
+     * @returns Whether the VAA has been processed
+     */
+    async isVaaProcessed(vaaHash: string): Promise<boolean> {
+        try {
+            const resource = await this.client.getAccountResource(
+                this.moduleAddress,
+                `${this.moduleAddress}::spoke::ProcessedVAAs`
+            );
+
+            if (!resource || !resource.data) {
+                return false;
+            }
+
+            const data = resource.data as any;
+            const processedVaas = data.processed || [];
+
+            // Check if vaaHash is in the processed list
+            const normalizedHash = vaaHash.toLowerCase().replace('0x', '');
+            return processedVaas.some((hash: string) => 
+                hash.toLowerCase().replace('0x', '') === normalizedHash
+            );
+        } catch (error) {
+            console.error('Error checking VAA status:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Check if protocol is paused
+     * 
+     * @returns Whether the protocol is paused
+     */
+    async isProtocolPaused(): Promise<boolean> {
+        try {
+            const resource = await this.client.getAccountResource(
+                this.moduleAddress,
+                `${this.moduleAddress}::spoke::Config`
+            );
+
+            if (!resource || !resource.data) {
+                return false;
+            }
+
+            const data = resource.data as any;
+            return data.paused === true;
+        } catch (error) {
+            console.error('Error checking pause status:', error);
+            return false;
+        }
+    }
 }
