@@ -270,6 +270,146 @@ export interface AuthorizedKey {
   isRoot: boolean;
 }
 
+// =============================================================================
+//                      SOCIAL RECOVERY TYPES (Issue #23)
+// =============================================================================
+
+/**
+ * Guardian configuration for an identity
+ */
+export interface GuardianConfig {
+  /** Array of guardian key hashes */
+  guardians: string[];
+  /** Required approvals for recovery (M-of-N) */
+  threshold: bigint;
+  /** Whether guardians have been configured */
+  isConfigured: boolean;
+}
+
+/**
+ * Recovery status for an identity
+ */
+export interface RecoveryStatus {
+  /** Whether a recovery is currently active */
+  isActive: boolean;
+  /** Proposed new owner key hash */
+  newOwnerKeyHash: string;
+  /** Timestamp when recovery was initiated */
+  initiatedAt: bigint;
+  /** Current number of guardian approvals */
+  approvalCount: bigint;
+  /** Required approvals for recovery */
+  threshold: bigint;
+  /** Timestamp when recovery can be executed (after timelock) */
+  canExecuteAt: bigint;
+  /** Timestamp when recovery expires */
+  expiresAt: bigint;
+}
+
+/**
+ * Result from setting up guardians
+ */
+export interface SetupGuardiansResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity guardians were set up for */
+  identity: string;
+  /** Array of guardian key hashes */
+  guardians: string[];
+  /** Required approvals for recovery */
+  threshold: bigint;
+}
+
+/**
+ * Result from adding a guardian
+ */
+export interface AddGuardianResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity the guardian was added to */
+  identity: string;
+  /** The guardian key hash that was added */
+  guardianKeyHash: string;
+}
+
+/**
+ * Result from removing a guardian
+ */
+export interface RemoveGuardianResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity the guardian was removed from */
+  identity: string;
+  /** The guardian key hash that was removed */
+  guardianKeyHash: string;
+}
+
+/**
+ * Result from initiating recovery
+ */
+export interface InitiateRecoveryResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity being recovered */
+  identity: string;
+  /** Proposed new owner key hash */
+  newOwnerKeyHash: string;
+  /** Timestamp when recovery can be executed */
+  canExecuteAt: bigint;
+}
+
+/**
+ * Result from approving recovery
+ */
+export interface ApproveRecoveryResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity being recovered */
+  identity: string;
+  /** The guardian who approved */
+  guardianKeyHash: string;
+  /** Current approval count */
+  approvalCount: bigint;
+  /** Required approvals */
+  threshold: bigint;
+}
+
+/**
+ * Result from executing recovery
+ */
+export interface ExecuteRecoveryResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity that was recovered */
+  identity: string;
+  /** The new owner key hash */
+  newOwnerKeyHash: string;
+}
+
+/**
+ * Result from cancelling recovery
+ */
+export interface CancelRecoveryResult {
+  /** Transaction hash on Hub chain */
+  transactionHash: string;
+  /** Wormhole sequence number for cross-chain sync */
+  sequence: bigint;
+  /** The identity whose recovery was cancelled */
+  identity: string;
+}
+
 export interface ExecuteAction {
   type: 'execute';
   target: string;

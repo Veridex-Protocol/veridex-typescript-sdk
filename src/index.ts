@@ -203,6 +203,19 @@ export type {
     AuthorizedKey,
 } from './core/types.js';
 
+// Issue #23: Social Recovery Types
+export type {
+    GuardianConfig,
+    RecoveryStatus,
+    SetupGuardiansResult,
+    AddGuardianResult,
+    RemoveGuardianResult,
+    InitiateRecoveryResult,
+    ApproveRecoveryResult,
+    ExecuteRecoveryResult,
+    CancelRecoveryResult,
+} from './types.js';
+
 // Query Types (Issue #9/#10/#11/#12) - from types.js
 export type {
     QueryProof,

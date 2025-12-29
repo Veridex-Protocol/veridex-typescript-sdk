@@ -91,6 +91,18 @@ const HUB_ABI = [
     'function isAuthorizedForIdentity(bytes32 identity, bytes32 keyHash) view returns (bool)',
     'function isIdentityRoot(bytes32 keyHash) view returns (bool)',
     'function getIdentityState(bytes32 keyHash) view returns (bytes32 identity, uint256 keyCount, uint256 maxKeys, bool isRoot)',
+    
+    // Issue #23: Social Recovery / Guardian Management
+    'function setupGuardians(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32[] guardians, uint256 threshold) external payable returns (uint64 sequence)',
+    'function addGuardian(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 guardianKeyHash) external payable returns (uint64 sequence)',
+    'function removeGuardian(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 guardianKeyHash) external payable returns (uint64 sequence)',
+    'function initiateRecovery(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 identityToRecover, bytes32 newOwnerKeyHash) external payable returns (uint64 sequence)',
+    'function approveRecovery(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 identityToRecover) external payable returns (uint64 sequence)',
+    'function executeRecovery(bytes32 identityToRecover, uint256 newPublicKeyX, uint256 newPublicKeyY) external payable returns (uint64 sequence)',
+    'function cancelRecovery(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY) external payable returns (uint64 sequence)',
+    'function getGuardians(bytes32 identityKeyHash) view returns (bytes32[] guardians, uint256 threshold, bool isConfigured)',
+    'function getRecoveryStatus(bytes32 identityKeyHash) view returns (bool isActive, bytes32 newOwnerKeyHash, uint256 initiatedAt, uint256 approvalCount, uint256 threshold, uint256 canExecuteAt, uint256 expiresAt)',
+    'function hasGuardianApproved(bytes32 identityKeyHash, bytes32 guardianKeyHash) view returns (bool hasApproved)',
 ];
 
 // ============================================================================
@@ -1134,5 +1146,335 @@ export class EVMClient implements ChainClient {
         }
 
         return { receipt, sequence };
+    }
+
+    // =========================================================================
+    //                      SOCIAL RECOVERY METHODS (Issue #23)
+    // =========================================================================
+
+    /**
+     * Setup guardians for an identity
+     * @param signature WebAuthn signature from owner
+     * @param publicKeyX Owner's public key X coordinate
+     * @param publicKeyY Owner's public key Y coordinate
+     * @param guardians Array of guardian key hashes
+     * @param threshold Required approvals for recovery
+     * @param signer Ethers signer for transaction
+     */
+    async setupGuardians(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        guardians: string[],
+        threshold: bigint,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.setupGuardians(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            guardians,
+            threshold,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Add a guardian to an identity
+     */
+    async addGuardian(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        guardianKeyHash: string,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.addGuardian(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            guardianKeyHash,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Remove a guardian from an identity
+     */
+    async removeGuardian(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        guardianKeyHash: string,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.removeGuardian(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            guardianKeyHash,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Initiate recovery as a guardian
+     */
+    async initiateRecovery(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        identityToRecover: string,
+        newOwnerKeyHash: string,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.initiateRecovery(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            identityToRecover,
+            newOwnerKeyHash,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Approve recovery as a guardian
+     */
+    async approveRecovery(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        identityToRecover: string,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.approveRecovery(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            identityToRecover,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Execute recovery after timelock (anyone can call)
+     */
+    async executeRecovery(
+        identityToRecover: string,
+        newPublicKeyX: bigint,
+        newPublicKeyY: bigint,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.executeRecovery(
+            identityToRecover,
+            newPublicKeyX,
+            newPublicKeyY,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Cancel recovery as owner
+     */
+    async cancelRecovery(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        signer: ethers.Signer
+    ): Promise<{ receipt: ethers.TransactionReceipt; sequence: bigint }> {
+        const hubWithSigner = this.hubContract.connect(signer) as any;
+
+        const authTuple = {
+            authenticatorData: signature.authenticatorData,
+            clientDataJSON: signature.clientDataJSON,
+            challengeIndex: signature.challengeIndex,
+            typeIndex: signature.typeIndex,
+            r: signature.r,
+            s: signature.s,
+        };
+
+        const messageFee = await this.getMessageFee();
+
+        const tx = await hubWithSigner.cancelRecovery(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            { value: messageFee }
+        );
+
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+
+        return { receipt, sequence };
+    }
+
+    /**
+     * Get guardians for an identity
+     */
+    async getGuardians(identityKeyHash: string): Promise<{
+        guardians: string[];
+        threshold: bigint;
+        isConfigured: boolean;
+    }> {
+        const result = await this.hubContract.getGuardians(identityKeyHash);
+        return {
+            guardians: result.guardians,
+            threshold: result.threshold,
+            isConfigured: result.isConfigured,
+        };
+    }
+
+    /**
+     * Get recovery status for an identity
+     */
+    async getRecoveryStatus(identityKeyHash: string): Promise<{
+        isActive: boolean;
+        newOwnerKeyHash: string;
+        initiatedAt: bigint;
+        approvalCount: bigint;
+        threshold: bigint;
+        canExecuteAt: bigint;
+        expiresAt: bigint;
+    }> {
+        const result = await this.hubContract.getRecoveryStatus(identityKeyHash);
+        return {
+            isActive: result.isActive,
+            newOwnerKeyHash: result.newOwnerKeyHash,
+            initiatedAt: result.initiatedAt,
+            approvalCount: result.approvalCount,
+            threshold: result.threshold,
+            canExecuteAt: result.canExecuteAt,
+            expiresAt: result.expiresAt,
+        };
+    }
+
+    /**
+     * Check if a guardian has approved recovery
+     */
+    async hasGuardianApproved(
+        identityKeyHash: string,
+        guardianKeyHash: string
+    ): Promise<boolean> {
+        return this.hubContract.hasGuardianApproved(identityKeyHash, guardianKeyHash);
+    }
+
+    /**
+     * Helper to extract sequence from transaction receipt
+     */
+    private _extractSequenceFromReceipt(receipt: ethers.TransactionReceipt): bigint {
+        for (const log of receipt.logs) {
+            try {
+                const parsed = this.hubContract.interface.parseLog({
+                    topics: log.topics as string[],
+                    data: log.data,
+                });
+                if (parsed?.name === 'Dispatch') {
+                    return BigInt(parsed.args.sequence);
+                }
+            } catch {
+                // Not a Hub event, skip
+            }
+        }
+        return 0n;
     }
 }
