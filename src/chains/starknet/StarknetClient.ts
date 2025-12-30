@@ -17,7 +17,7 @@
  * - Spoke validates source_chain == hubChainId (NOT targetChain)
  * 
  * Custom Bridge:
- * - Bridge address: 0x5fb87f29937b2b1eff97e18cd72c3c28985e51e2916b0b75f739c5641845e13
+ * - Bridge address: 0x2c458c1ae64556482b05cc2d3ee5b032ed114d68429dda2062c9849a5a725f8
  * - Chain ID: 50001 (custom range 50000+, reserved for non-Wormhole chains)
  * - Hub Chain ID: 10004 (Base Sepolia - what bridge validates as source)
  */

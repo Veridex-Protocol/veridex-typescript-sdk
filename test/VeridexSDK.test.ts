@@ -192,7 +192,7 @@ function makeChainConfig(): ChainConfig {
         explorerUrl: 'https://example',
         isEvm: true,
         contracts: {
-            hub: '0x708eEE22621A64CDF51d98d3e8D97902D7dF52dD',
+            hub: '0x66D87dE68327f48A099c5B9bE97020Feab9a7c82',
             wormholeCoreBridge: '0x0000000000000000000000000000000000000001',
         },
     };
