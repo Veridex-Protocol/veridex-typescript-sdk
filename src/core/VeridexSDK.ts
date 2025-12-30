@@ -869,7 +869,12 @@ export class VeridexSDK {
             actionPayload,
             nonce,
             challenge,
+            estimatedGas: 0n,
+            gasPrice: 0n,
             messageFee,
+            totalCost: messageFee,
+            formattedCost: '0',
+            preparedAt: Date.now(),
             expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
         };
     }
@@ -906,7 +911,12 @@ export class VeridexSDK {
             actionPayload,
             nonce,
             challenge,
+            estimatedGas: 0n,
+            gasPrice: 0n,
             messageFee,
+            totalCost: messageFee,
+            formattedCost: '0',
+            preparedAt: Date.now(),
             expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
         };
     }
@@ -942,7 +952,12 @@ export class VeridexSDK {
             actionPayload,
             nonce,
             challenge,
+            estimatedGas: 0n,
+            gasPrice: 0n,
             messageFee,
+            totalCost: messageFee,
+            formattedCost: '0',
+            preparedAt: Date.now(),
             expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
         };
     }

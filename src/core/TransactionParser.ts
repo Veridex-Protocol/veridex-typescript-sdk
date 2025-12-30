@@ -18,7 +18,7 @@ import {
   decodeTransferAction,
   decodeBridgeAction,
 } from '../payload.js';
-import type { PreparedTransfer } from './types.js';
+import type { PreparedTransfer, PreparedBridge } from './types.js';
 import type { BridgeParams, TransferParams } from '../types.js';
 import type {
   TransactionSummary,
@@ -148,49 +148,80 @@ export class TransactionParser {
    * This method determines the action type from the payload and delegates
    * to the appropriate specialized parser.
    * 
-   * @param prepared - PreparedTransfer object from SDK
+   * @param prepared - PreparedTransfer or PreparedBridge object from SDK
    * @param vaultAddress - Optional vault address (uses default if not provided)
    * @param vaultChainId - Optional vault chain ID (uses config default if not provided)
    */
   async parse(
-    prepared: PreparedTransfer,
+    prepared: PreparedTransfer | PreparedBridge,
     vaultAddress?: string,
     vaultChainId?: number
   ): Promise<TransactionSummary> {
     const effectiveVaultAddress = vaultAddress ?? '0x0000000000000000000000000000000000000000';
-    const effectiveChainId = vaultChainId ?? this.config.defaultChainId ?? prepared.params.targetChain;
+    
+    // Determine chain ID based on type - PreparedBridge uses destinationChain, PreparedTransfer uses params.targetChain
+    const isBridgePrepared = 'destinationChain' in prepared;
+    const defaultChainId = isBridgePrepared 
+      ? (prepared as PreparedBridge).destinationChain 
+      : (prepared as PreparedTransfer).params.targetChain;
+    const effectiveChainId = vaultChainId ?? this.config.defaultChainId ?? defaultChainId;
+    
+    // Normalize to PreparedTransfer with defaults for missing fields
+    // For PreparedBridge, we construct params from the bridge-specific fields
+    const normalizedParams: TransferParams = isBridgePrepared 
+      ? {
+          targetChain: (prepared as PreparedBridge).destinationChain,
+          token: (prepared as PreparedBridge).params.token,
+          recipient: (prepared as PreparedBridge).params.recipient,
+          amount: (prepared as PreparedBridge).params.amount,
+        }
+      : (prepared as PreparedTransfer).params;
+
+    const normalized: PreparedTransfer = {
+      params: normalizedParams,
+      actionPayload: prepared.actionPayload,
+      nonce: prepared.nonce,
+      challenge: prepared.challenge,
+      estimatedGas: (prepared as PreparedTransfer).estimatedGas ?? 0n,
+      gasPrice: (prepared as PreparedTransfer).gasPrice ?? 0n,
+      messageFee: (prepared as PreparedTransfer).messageFee ?? (isBridgePrepared ? (prepared as PreparedBridge).fees?.relayerFee ?? 0n : 0n),
+      totalCost: (prepared as PreparedTransfer).totalCost ?? 0n,
+      formattedCost: (prepared as PreparedTransfer).formattedCost ?? '0',
+      preparedAt: prepared.preparedAt ?? Date.now(),
+      expiresAt: prepared.expiresAt,
+    };
 
     // Determine action type from payload
-    const actionType = this.detectActionType(prepared.actionPayload);
+    const actionType = this.detectActionType(normalized.actionPayload);
 
     switch (actionType) {
       case ACTION_TRANSFER:
-        return this.parseTransfer(prepared, effectiveVaultAddress, effectiveChainId);
+        return this.parseTransfer(normalized, effectiveVaultAddress, effectiveChainId);
       case ACTION_BRIDGE:
-        return this.parseBridgeFromPrepared(prepared, effectiveVaultAddress, effectiveChainId);
+        return this.parseBridgeFromPrepared(normalized, effectiveVaultAddress, effectiveChainId);
       case ACTION_EXECUTE:
         return this.parseExecuteFromPayload(
-          prepared.actionPayload,
-          prepared.nonce,
-          prepared.challenge,
+          normalized.actionPayload,
+          normalized.nonce,
+          normalized.challenge,
           effectiveVaultAddress,
           effectiveChainId,
-          prepared.expiresAt,
-          prepared.formattedCost
+          normalized.expiresAt,
+          normalized.formattedCost
         );
       case ACTION_CONFIG:
         return this.parseConfigFromPayload(
-          prepared.actionPayload,
-          prepared.nonce,
-          prepared.challenge,
+          normalized.actionPayload,
+          normalized.nonce,
+          normalized.challenge,
           effectiveVaultAddress,
           effectiveChainId,
-          prepared.expiresAt,
-          prepared.formattedCost
+          normalized.expiresAt,
+          normalized.formattedCost
         );
       default:
         // Fallback for unknown action types
-        return this.createUnknownActionSummary(prepared, effectiveVaultAddress, effectiveChainId);
+        return this.createUnknownActionSummary(normalized, effectiveVaultAddress, effectiveChainId);
     }
   }
 

@@ -163,6 +163,11 @@ export interface ConfigDetails {
 }
 
 /**
+ * Union type for all action-specific details
+ */
+export type ActionDetails = TransferDetails | BridgeDetails | ExecuteDetails | ConfigDetails;
+
+/**
  * Complete transaction summary for display
  */
 export interface TransactionSummary {
