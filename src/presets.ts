@@ -562,7 +562,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://explorer.solana.com',
       isEvm: false,
       contracts: {
-        hub: 'wtwsihw4g2uV8zjFvyNoXFrYhDtsmGLVCFXbJkaiHVn',
+        hub: 'AnyXHsqq9c2BiW4WgBcj6Aye7Ua7a7L7iSuwpfJxECJM',
         wormholeCoreBridge: '3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5',
         tokenBridge: 'DZnkkTmCiFWfYTfT41X3Rd1kDgozqzxWaHqsw6W4x2oe',
       },
@@ -658,7 +658,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       name: 'Starknet Sepolia',
       chainId: 0,
       wormholeChainId: 50001, // Custom bridge (non-Wormhole)
-      rpcUrl: 'https://starknet-sepolia.public.blastapi.io/rpc/v0_7',
+      rpcUrl: 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/YOUR_ALCHEMY_KEY_HERE',
       explorerUrl: 'https://sepolia.starkscan.co',
       isEvm: false,
       contracts: {

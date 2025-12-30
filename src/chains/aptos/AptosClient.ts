@@ -5,7 +5,7 @@
  */
 
 import { AptosClient as AptosSDK, Types } from 'aptos';
-import { createHash } from 'crypto';
+import { sha3_256 } from 'js-sha3';
 import type {
     ChainClient,
     ChainConfig,
@@ -247,14 +247,25 @@ export class AptosClient implements ChainClient {
         // Resource account address derivation on Aptos:
         // address = sha3_256(source_address || seed || AUTH_KEY_DERIVATION_SCHEME)
 
-        const sourceAddress = Buffer.from(this.moduleAddress.replace('0x', ''), 'hex');
-        const seed = Buffer.from(userKeyHash.replace('0x', ''), 'hex');
-        const scheme = Buffer.from([0xFE]); // Resource account scheme
+        const sourceAddress = this.hexToBytes(this.moduleAddress.replace('0x', ''));
+        const seed = this.hexToBytes(userKeyHash.replace('0x', ''));
+        const scheme = new Uint8Array([0xFE]); // Resource account scheme
 
-        const combined = Buffer.concat([sourceAddress, seed, scheme]);
-        const hash = createHash('sha3-256').update(combined).digest();
+        const combined = new Uint8Array([...sourceAddress, ...seed, ...scheme]);
+        const hash = sha3_256(combined);
 
-        return '0x' + hash.toString('hex');
+        return '0x' + hash;
+    }
+
+    /**
+     * Convert hex string to Uint8Array (browser-compatible)
+     */
+    private hexToBytes(hex: string): Uint8Array {
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < hex.length; i += 2) {
+            bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+        }
+        return bytes;
     }
 
     async vaultExists(userKeyHash: string): Promise<boolean> {
@@ -431,22 +442,19 @@ export class AptosClient implements ChainClient {
      * Matches EVM keccak256(abi.encode(publicKeyX, publicKeyY))
      */
     private computeKeyHash(publicKeyX: bigint, publicKeyY: bigint): string {
-        const xBuffer = Buffer.alloc(32);
-        const yBuffer = Buffer.alloc(32);
-
         // Write as big-endian to match EVM encoding
         const xHex = publicKeyX.toString(16).padStart(64, '0');
         const yHex = publicKeyY.toString(16).padStart(64, '0');
 
-        Buffer.from(xHex, 'hex').copy(xBuffer);
-        Buffer.from(yHex, 'hex').copy(yBuffer);
+        const xBytes = this.hexToBytes(xHex);
+        const yBytes = this.hexToBytes(yHex);
 
         // Use SHA3-256 for Aptos (which is what Aptos uses natively)
         // For cross-chain compatibility, this should match the EVM hash
-        const combined = Buffer.concat([xBuffer, yBuffer]);
-        const hash = createHash('sha3-256').update(combined).digest();
+        const combined = new Uint8Array([...xBytes, ...yBytes]);
+        const hash = sha3_256(combined);
 
-        return '0x' + hash.toString('hex');
+        return '0x' + hash;
     }
 
     /**
@@ -458,23 +466,23 @@ export class AptosClient implements ChainClient {
         actionPayload: string,
         nonce: bigint
     ): string {
-        const keyHashBuffer = Buffer.from(keyHash.replace('0x', ''), 'hex');
-        const targetChainBuffer = Buffer.alloc(2);
-        targetChainBuffer.writeUInt16BE(targetChain);
-        const payloadBuffer = Buffer.from(actionPayload.replace('0x', ''), 'hex');
-        const nonceBuffer = Buffer.alloc(32);
+        const keyHashBytes = this.hexToBytes(keyHash.replace('0x', ''));
+        const targetChainBytes = new Uint8Array(2);
+        targetChainBytes[0] = (targetChain >> 8) & 0xFF;
+        targetChainBytes[1] = targetChain & 0xFF;
+        const payloadBytes = this.hexToBytes(actionPayload.replace('0x', ''));
         const nonceHex = nonce.toString(16).padStart(64, '0');
-        Buffer.from(nonceHex, 'hex').copy(nonceBuffer);
+        const nonceBytes = this.hexToBytes(nonceHex);
 
-        const combined = Buffer.concat([
-            keyHashBuffer,
-            targetChainBuffer,
-            payloadBuffer,
-            nonceBuffer,
+        const combined = new Uint8Array([
+            ...keyHashBytes,
+            ...targetChainBytes,
+            ...payloadBytes,
+            ...nonceBytes,
         ]);
 
-        const hash = createHash('sha3-256').update(combined).digest();
-        return '0x' + hash.toString('hex');
+        const hash = sha3_256(combined);
+        return '0x' + hash;
     }
 
     /**
