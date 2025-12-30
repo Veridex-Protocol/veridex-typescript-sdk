@@ -41,6 +41,52 @@ import { RpcProvider } from 'starknet';
 import { encodeTransferAction, encodeExecuteAction, encodeBridgeAction } from '../../payload.js';
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+// Starknet felt252 max value is 2^252 - 1
+const FELT252_MAX = BigInt('0x0800000000000000000000000000000000000000000000000000000000000000') - 1n;
+
+// 2^128 for splitting u256 into low/high
+const U128_MAX = BigInt('0x100000000000000000000000000000000');
+
+/**
+ * Convert a 256-bit keyHash to Starknet u256 format (low, high felt252 pair).
+ * Starknet u256 is represented as two felt252 values: (low_128_bits, high_128_bits)
+ * 
+ * @param keyHash - 256-bit hex string (with or without 0x prefix)
+ * @returns Array of two hex strings [low, high] for Starknet calldata
+ */
+function toStarknetU256(keyHash: string): [string, string] {
+    const cleanHash = keyHash.replace('0x', '').padStart(64, '0');
+    const value = BigInt('0x' + cleanHash);
+    
+    // Split into low 128 bits and high 128 bits
+    const low = value % U128_MAX;
+    const high = value / U128_MAX;
+    
+    return [
+        '0x' + low.toString(16),
+        '0x' + high.toString(16)
+    ];
+}
+
+/**
+ * Truncate a 256-bit keyHash to fit within Starknet's felt252 (252-bit) field.
+ * Clears the top 4 bits to ensure the value is < 2^252.
+ * 
+ * @param keyHash - 256-bit hex string (with or without 0x prefix)
+ * @returns felt252-compatible hex string with 0x prefix
+ */
+function toStarknetFelt(keyHash: string): string {
+    const cleanHash = keyHash.replace('0x', '');
+    const value = BigInt('0x' + cleanHash);
+    // Mask to felt252 range (clear top 4 bits)
+    const masked = value & FELT252_MAX;
+    return '0x' + masked.toString(16);
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -569,11 +615,14 @@ export class StarknetClient implements ChainClient {
                 throw new Error('Spoke contract address not configured');
             }
 
-            // Call get_vault on spoke contract
+            // Starknet spoke expects u256 (low, high) format for keyHash
+            const [low, high] = toStarknetU256(ownerKeyHash);
+
+            // Call get_vault on spoke contract with u256 split into [low, high]
             const result = await this.provider.callContract({
                 contractAddress: spokeAddress,
                 entrypoint: 'get_vault',
-                calldata: [ownerKeyHash],
+                calldata: [low, high],
             });
 
             // result[0] is the vault address (0 if not found)
