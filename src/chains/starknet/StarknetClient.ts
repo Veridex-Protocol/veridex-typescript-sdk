@@ -264,6 +264,65 @@ export class StarknetClient implements ChainClient {
         );
     }
 
+    /**
+     * Create a vault via the relayer (sponsored/gasless)
+     * This is the recommended way to create Starknet vaults
+     * 
+     * The relayer will dispatch a vault creation action from Hub via custom bridge to Starknet spoke
+     */
+    async createVaultViaRelayer(
+        userKeyHash: string,
+        relayerUrl: string
+    ): Promise<VaultCreationResult> {
+        const response = await fetch(`${relayerUrl}/api/v1/starknet/vault`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                userKeyHash,
+                chainId: this.config.wormholeChainId,
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to create vault via relayer');
+        }
+
+        return {
+            address: result.vaultAddress,
+            transactionHash: result.transactionHash || '',
+            blockNumber: 0,
+            gasUsed: 0n,
+            alreadyExisted: result.alreadyExists || false,
+            sponsoredBy: 'relayer',
+        };
+    }
+
+    /**
+     * Get vault info via relayer (includes existence check)
+     */
+    async getVaultViaRelayer(
+        userKeyHash: string,
+        relayerUrl: string
+    ): Promise<{ vaultAddress: string; exists: boolean }> {
+        const response = await fetch(
+            `${relayerUrl}/api/v1/starknet/vault/${userKeyHash}?chainId=${this.config.wormholeChainId}`
+        );
+
+        if (!response.ok) {
+            throw new Error('Failed to get vault info from relayer');
+        }
+
+        const result = await response.json();
+        return {
+            vaultAddress: result.vaultAddress,
+            exists: result.exists,
+        };
+    }
+
     async estimateVaultCreationGas(_userKeyHash: string): Promise<bigint> {
         return 0n;
     }
