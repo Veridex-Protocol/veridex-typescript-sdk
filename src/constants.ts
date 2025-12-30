@@ -166,7 +166,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.basescan.org',
     isEvm: true,
     contracts: {
-      hub: '0x708eEE22621A64CDF51d98d3e8D97902D7dF52dD',
+      hub: '0x66D87dE68327f48A099c5B9bE97020Feab9a7c82',
       vaultFactory: '0x40D9B16094808Fa48e73598E31AB964Cf15b475f',
       vaultImplementation: '0xcBEb49b0109E61c1C69C51D5D9483A3aD6D18258',
       wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
@@ -222,7 +222,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://explorer.solana.com',
     isEvm: false,
     contracts: {
-      hub: 'J7JehynQjN4XrucGQ5joMfhQWiViDmmLhQLriGUcWAM2',
+      hub: 'wtwsihw4g2uV8zjFvyNoXFrYhDtsmGLVCFXbJkaiHVn',
       wormholeCoreBridge: '3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5',
       tokenBridge: 'DZnkkTmCiFWfYTfT41X3Rd1kDgozqzxWaHqsw6W4x2oe',
     },
@@ -235,7 +235,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://explorer.aptoslabs.com',
     isEvm: false,
     contracts: {
-      hub: '0x65c2347fabc7a728ceb57a8c8af54bf5e53d8c4550f4b9bb387429385c1b3535',
+      hub: '0x1a89da9e9f8f0bc90d8d492890bd55fb261c6277d2a95dfcac70c268d0c23dcc',
       wormholeCoreBridge: '0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625',
       tokenBridge: '0x576410486a2da45eee6c949c995670112ddf2fbeedab20350d506328eefc9d4f',
     },
@@ -248,7 +248,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://suiscan.xyz/testnet',
     isEvm: false,
     contracts: {
-      hub: '0x6ae854c698d73e39f5dc07c4d2291fa81e8732aded14bbff3b98cfa8bfaebff5',
+      hub: '0x35e99fdbbc1cde7e093da6f9e758ba2c4a077904bd64caee2fa6db5e6c4e9e37',
       wormholeCoreBridge: '0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790',
     },
   },
@@ -261,9 +261,9 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     isEvm: false,
     contracts: {
       // Starknet spoke contract
-      hub: '0x767073ab5682d1908c7f6498eee8e480fb2457dbcf34bab075c5dd536d08176',
+      hub: '0x68adcc730ed6c355200d00f763825448497b9cdf7936ca121711e078c88e811',
       // Custom bridge contract (NOT Wormhole)
-      wormholeCoreBridge: '0x5fb87f29937b2b1eff97e18cd72c3c28985e51e2916b0b75f739c5641845e13',
+      wormholeCoreBridge: '0x2c458c1ae64556482b05cc2d3ee5b032ed114d68429dda2062c9849a5a725f8',
     },
     // Hub chain ID that Starknet bridge validates (Base Sepolia = 10004)
     hubChainId: 10004,
