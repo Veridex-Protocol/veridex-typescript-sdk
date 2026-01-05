@@ -220,16 +220,29 @@ export class AptosClient implements ChainClient {
      */
     async getVaultAddress(userKeyHash: string): Promise<string | null> {
         try {
-            // Query the on-chain VaultRegistry via view function
-            // The Aptos REST API expects vector<u8> arguments as hex strings with 0x prefix
-            const keyHashHex = userKeyHash.startsWith('0x') 
-                ? userKeyHash.toLowerCase().padStart(66, '0').replace(/^0+/, '0x').padStart(66, '0')
-                : `0x${userKeyHash.toLowerCase().padStart(64, '0')}`;
+            // Normalize: remove 0x if present, lowercase, pad to 64 chars, then add 0x
+            const rawHex = userKeyHash.startsWith('0x') 
+                ? userKeyHash.slice(2).toLowerCase()
+                : userKeyHash.toLowerCase();
+            const keyHashHex = `0x${rawHex.padStart(64, '0')}`;
             
+            // First check if vault exists to avoid noisy 400 errors in console
+            const existsPayload = {
+                function: `${this.moduleAddress}::spoke::vault_exists`,
+                type_arguments: [],
+                arguments: [keyHashHex],
+            };
+            
+            const existsResponse = await this.client.view(existsPayload);
+            if (!existsResponse || existsResponse.length === 0 || existsResponse[0] !== true) {
+                return null; // Vault doesn't exist
+            }
+            
+            // Vault exists, now get the address
             const payload = {
                 function: `${this.moduleAddress}::spoke::get_vault_address`,
                 type_arguments: [],
-                arguments: [keyHashHex], // Pass as hex string for vector<u8>
+                arguments: [keyHashHex],
             };
 
             const response = await this.client.view(payload);
