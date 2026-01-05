@@ -214,42 +214,64 @@ export class AptosClient implements ChainClient {
         };
     }
 
+    /**
+     * Get vault address from on-chain VaultRegistry.
+     * Queries the get_vault_address view function which looks up the vault in the registry.
+     */
     async getVaultAddress(userKeyHash: string): Promise<string | null> {
         try {
-            const vaultAddress = this.computeVaultAddressFromHash(userKeyHash);
+            // Query the on-chain VaultRegistry via view function
+            const keyHashBytes = this.hexToBytes(userKeyHash.replace('0x', '').padStart(64, '0'));
+            
+            const payload = {
+                function: `${this.moduleAddress}::veridex_spoke::get_vault_address`,
+                type_arguments: [],
+                arguments: [Array.from(keyHashBytes)],
+            };
 
-            // Check if account exists
-            const account = await this.client.getAccount(vaultAddress);
-
-            if (account) {
+            const response = await this.client.view(payload);
+            
+            if (response && response.length > 0) {
+                const vaultAddress = response[0] as string;
                 return vaultAddress;
             }
 
             return null;
-        } catch (error) {
-            if ((error as any)?.status === 404) {
-                return null; // Account doesn't exist
+        } catch (error: any) {
+            // E_VAULT_NOT_FOUND (error code 6) means vault doesn't exist in registry
+            if (error?.message?.includes('E_VAULT_NOT_FOUND') || 
+                error?.message?.includes('error code 6') ||
+                error?.status === 404) {
+                return null;
             }
-            console.error('Error getting vault address:', error);
+            console.error('Error getting vault address from registry:', error);
             return null;
         }
     }
 
     /**
-     * Compute vault address using resource account derivation
-     * On Aptos, vaults are derived from the module address + user key hash
+     * @deprecated Use getVaultAddress() instead - this method uses incorrect address derivation.
+     * On Aptos, vaults are created as named objects by the relayer, not resource accounts.
+     * The vault address depends on which relayer created it, so must be queried on-chain.
      */
     computeVaultAddress(userKeyHash: string): string {
+        console.warn(
+            'computeVaultAddress() is deprecated for Aptos. ' +
+            'Use getVaultAddress() to query the on-chain VaultRegistry instead.'
+        );
         return this.computeVaultAddressFromHash(userKeyHash);
     }
 
     private computeVaultAddressFromHash(userKeyHash: string): string {
-        // Resource account address derivation on Aptos:
-        // address = sha3_256(source_address || seed || AUTH_KEY_DERIVATION_SCHEME)
+        // NOTE: This is kept for backward compatibility but produces INCORRECT addresses!
+        // Aptos spoke uses object::create_named_object(creator, key_hash) where:
+        // - creator = relayer address (not module address)
+        // - scheme = 0xFD (named object, not 0xFE resource account)
+        // The correct approach is to query the VaultRegistry on-chain.
 
         const sourceAddress = this.hexToBytes(this.moduleAddress.replace('0x', ''));
         const seed = this.hexToBytes(userKeyHash.replace('0x', ''));
-        const scheme = new Uint8Array([0xFE]); // Resource account scheme
+        const scheme = new Uint8Array([0xFE]); // INCORRECT - kept for backward compat
 
         const combined = new Uint8Array([...sourceAddress, ...seed, ...scheme]);
         const hash = sha3_256(combined);
