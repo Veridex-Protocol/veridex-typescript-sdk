@@ -221,12 +221,14 @@ export class AptosClient implements ChainClient {
     async getVaultAddress(userKeyHash: string): Promise<string | null> {
         try {
             // Query the on-chain VaultRegistry via view function
-            const keyHashBytes = this.hexToBytes(userKeyHash.replace('0x', '').padStart(64, '0'));
+            // Module is veridex::spoke (not veridex_spoke)
+            // Normalize keyHash to 0x-prefixed 64-char hex string
+            const normalizedKeyHash = '0x' + userKeyHash.replace('0x', '').padStart(64, '0');
             
             const payload = {
-                function: `${this.moduleAddress}::veridex_spoke::get_vault_address`,
+                function: `${this.moduleAddress}::spoke::get_vault_address`,
                 type_arguments: [],
-                arguments: [Array.from(keyHashBytes)],
+                arguments: [normalizedKeyHash], // Pass as hex string, not byte array
             };
 
             const response = await this.client.view(payload);
