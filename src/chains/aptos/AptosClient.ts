@@ -221,13 +221,15 @@ export class AptosClient implements ChainClient {
     async getVaultAddress(userKeyHash: string): Promise<string | null> {
         try {
             // Query the on-chain VaultRegistry via view function
-            // The Move function expects vector<u8>, so we convert hex to byte array
-            const keyHashBytes = this.hexToBytes(userKeyHash.replace('0x', '').padStart(64, '0'));
+            // The Aptos REST API expects vector<u8> arguments as hex strings with 0x prefix
+            const keyHashHex = userKeyHash.startsWith('0x') 
+                ? userKeyHash.toLowerCase().padStart(66, '0').replace(/^0+/, '0x').padStart(66, '0')
+                : `0x${userKeyHash.toLowerCase().padStart(64, '0')}`;
             
             const payload = {
                 function: `${this.moduleAddress}::spoke::get_vault_address`,
                 type_arguments: [],
-                arguments: [Array.from(keyHashBytes)], // Pass as array of numbers for vector<u8>
+                arguments: [keyHashHex], // Pass as hex string for vector<u8>
             };
 
             const response = await this.client.view(payload);
