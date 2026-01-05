@@ -91,7 +91,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write src/**/*.ts"
+    "format": "prettier --write src/**/*.ts",
+    "prepublishOnly": "npm run build && npm run test",
+    "release:public": "cd ../.. && git subtree push --prefix=packages/sdk sdk-public main"
   },
   "dependencies": {
     "@mysten/bcs": "1.9.2",
