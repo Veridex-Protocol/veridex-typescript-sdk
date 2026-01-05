@@ -1,5 +1,8 @@
 # @veridex/sdk
 
+[![npm version](https://img.shields.io/npm/v/@veridex/sdk.svg)](https://www.npmjs.com/package/@veridex/sdk)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Veridex Protocol SDK - Client library for **Passkey-based cross-chain authentication**.
 
 Build applications with WebAuthn/Passkeys (P-256) that work across EVM, Solana, Aptos, Sui, and Starknet.
