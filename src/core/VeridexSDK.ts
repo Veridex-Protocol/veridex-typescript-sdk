@@ -1536,6 +1536,116 @@ export class VeridexSDK {
     }
 
     /**
+     * Get the vault address for a specific chain
+     * Each EVM chain has its own factory contract, so vault addresses are chain-specific.
+     * 
+     * @param wormholeChainId - The Wormhole chain ID
+     * @param keyHash - Optional key hash (defaults to current credential)
+     * @returns The deterministic vault address for that chain, or null if chain not supported
+     */
+    getVaultAddressForChain(wormholeChainId: number, keyHash?: string): string | null {
+        const hash = keyHash ?? this.passkey.getCredential()?.keyHash;
+        if (!hash) {
+            throw new Error('No credential set and no keyHash provided');
+        }
+
+        const credential = { keyHash: hash } as PasskeyCredential;
+        const derived = this.chainDetector.deriveVaultAddress(credential, wormholeChainId);
+        return derived?.address ?? null;
+    }
+
+    /**
+     * Get vault balances for a specific chain
+     * Unlike getVaultBalances() which uses the hub chain, this fetches for any EVM chain.
+     * 
+     * @param wormholeChainId - The Wormhole chain ID
+     * @param includeZeroBalances - Whether to include tokens with 0 balance
+     * @returns PortfolioBalance with all token balances for that chain
+     */
+    async getVaultBalancesForChain(
+        wormholeChainId: number,
+        includeZeroBalances: boolean = false
+    ): Promise<PortfolioBalance> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new Error('No credential set');
+        }
+
+        // Get the correct vault address for this chain
+        const vaultAddress = this.getVaultAddressForChain(wormholeChainId, credential.keyHash);
+        if (!vaultAddress) {
+            throw new Error(`Cannot derive vault address for chain ${wormholeChainId}`);
+        }
+
+        const chainConfig = this.chainDetector.getChainConfig(wormholeChainId);
+        if (!chainConfig) {
+            throw new Error(`Unknown chain ${wormholeChainId}`);
+        }
+
+        // Try Wormhole Queries first for faster, attested results
+        if (this.queryApiKey) {
+            try {
+                const tokenList = getAllTokens(wormholeChainId);
+                const erc20Tokens = tokenList
+                    .filter((t) => !isNativeToken(t.address))
+                    .map((t) => t.address);
+
+                const rpcUrl = this.chainRpcUrls?.[wormholeChainId] ?? chainConfig.rpcUrl;
+                
+                const result = await queryPortfolio(credential.keyHash, this.queryApiKey, {
+                    network: this.testnet ? 'testnet' : 'mainnet',
+                    vaultAddresses: { [wormholeChainId]: vaultAddress },
+                    evmTokenAddresses: { [wormholeChainId]: erc20Tokens },
+                    rpcUrls: { [wormholeChainId]: rpcUrl },
+                    maxAge: 60,
+                    timeout: this.testnet ? 15_000 : 10_000,
+                    maxAttempts: this.testnet ? 3 : 2,
+                });
+
+                const chain = result.chains.find((c) => c.wormholeChainId === wormholeChainId);
+                if (chain && !chain.error) {
+                    const byAssetId = new Map(chain.balances.map((b) => [b.assetId.toLowerCase(), b] as const));
+                    const tokens = tokenList.map((t) => {
+                        if (isNativeToken(t.address)) {
+                            return null;
+                        }
+                        const found = byAssetId.get(t.address.toLowerCase());
+                        const amount = found?.amount ?? 0n;
+                        const formatted = ethers.formatUnits(amount, t.decimals);
+                        return {
+                            token: t,
+                            balance: amount,
+                            formatted,
+                            usdValue: found?.usdValue,
+                        };
+                    }).filter((t): t is NonNullable<typeof t> => !!t);
+
+                    // Add native token via RPC
+                    const native = await this.balance.getNativeBalance(wormholeChainId, vaultAddress);
+                    const merged = [native, ...tokens];
+
+                    const filtered = includeZeroBalances ? merged : merged.filter((t) => t.balance > 0n);
+                    const totalUsdValue = filtered.reduce((sum, t) => sum + (t.usdValue ?? 0), 0);
+
+                    return {
+                        wormholeChainId,
+                        chainName: chainConfig.name,
+                        address: vaultAddress,
+                        tokens: filtered,
+                        totalUsdValue: totalUsdValue || undefined,
+                        lastUpdated: Date.now(),
+                    };
+                }
+            } catch {
+                // Fall back to RPC-based balance fetching
+            }
+        }
+
+        // Fallback to RPC-based balance fetching
+        return await this.balance.getPortfolioBalance(wormholeChainId, vaultAddress, includeZeroBalances);
+    }
+
+    /**
      * Get unified identity with addresses across chains
      * 
      * @returns UnifiedIdentity containing credential info and chain addresses

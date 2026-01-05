@@ -520,6 +520,11 @@ export class RelayerClient {
     // ========================================================================
 
     /**
+     * SDK version for telemetry
+     */
+    private static readonly SDK_VERSION = '1.0.0-beta.1';
+
+    /**
      * Make an HTTP request to the relayer
      */
     private async fetch(
@@ -528,6 +533,7 @@ export class RelayerClient {
     ): Promise<any> {
         const headers: HeadersInit = {
             'Content-Type': 'application/json',
+            'User-Agent': `@veridex/sdk/${RelayerClient.SDK_VERSION}`,
             ...(options.headers || {}),
         };
 
