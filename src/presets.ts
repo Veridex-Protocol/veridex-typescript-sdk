@@ -93,8 +93,8 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       isEvm: true,
       contracts: {
         hub: '0x66D87dE68327f48A099c5B9bE97020Feab9a7c82',
-        vaultFactory: '0x40D9B16094808Fa48e73598E31AB964Cf15b475f',
-        vaultImplementation: '0xcBEb49b0109E61c1C69C51D5D9483A3aD6D18258',
+        vaultFactory: '0xCFaEb5652aa2Ee60b2229dC8895B4159749C7e53',
+        vaultImplementation: '0x0d13367C16c6f0B24eD275CC67C7D9f42878285c',
         wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
         tokenBridge: '0x86F55A04690fd7815A3D802bD587e83eA888B239',
       },
@@ -129,8 +129,8 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://sepolia-optimism.etherscan.io',
       isEvm: true,
       contracts: {
-        vaultFactory: '0xAbB421166E648953CDBE93c0078a0A794c56Fb84',
-        vaultImplementation: '0xDCD7daEf1AC06f4a8392957cca4834F7a16c058D',
+        vaultFactory: '0xA5653d54079ABeCe780F8d9597B2bc4B09fe464A',
+        vaultImplementation: '0x8099b1406485d2255ff89Ce5Ea18520802AFC150',
         wormholeCoreBridge: '0x31377888146f3253211EFEf5c676D41ECe7D58Fe',
         tokenBridge: '0x99737Ec4B815d816c49A385943baf0380e75c0Ac',
       },
