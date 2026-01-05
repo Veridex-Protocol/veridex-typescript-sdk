@@ -596,7 +596,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://explorer.aptoslabs.com',
       isEvm: false,
       contracts: {
-        hub: '0x1a89da9e9f8f0bc90d8d492890bd55fb261c6277d2a95dfcac70c268d0c23dcc',
+        hub: '0x0237e04f74b991b5b6030a793779663033f4ff4a1682a9e66c1f41fc1ec3e2a4',
         wormholeCoreBridge: '0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625',
         tokenBridge: '0x576410486a2da45eee6c949c995670112ddf2fbeedab20350d506328eefc9d4f',
       },
