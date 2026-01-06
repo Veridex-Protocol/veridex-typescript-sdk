@@ -111,6 +111,13 @@ export const OPTIMISM_SEPOLIA_TOKENS: ChainTokenList = {
             decimals: 18,
             isNative: false,
         },
+        {
+            symbol: 'WETH.base',
+            name: 'Wrapped WETH (Base via Wormhole)',
+            address: '0xD408f6498f48aE11BcAb518dA39cF7940eE3271d', // Wormhole-wrapped Base WETH
+            decimals: 18,
+            isNative: false,
+        },
     ],
 };
 

@@ -518,6 +518,9 @@ export class VeridexSDK {
             message: 'Sign with your passkey...',
         });
 
+        // BRIDGE actions target sourceChain (where funds are held)
+        // The destinationChain is encoded in the actionPayload itself
+        // The VAA will be executed on the SOURCE vault to initiate Token Bridge transfer
         const challenge = buildGaslessChallenge(
             params.sourceChain,
             actionPayload,
@@ -534,6 +537,8 @@ export class VeridexSDK {
         });
 
         // Use full WebAuthn data for authenticateAndDispatch
+        // For BRIDGE: targetChain = sourceChain (where funds are)
+        // The destination is in the actionPayload
         const submitRequest: SubmitSignedActionRequest = {
             authenticatorData: signature.authenticatorData,
             clientDataJSON: signature.clientDataJSON,
@@ -543,7 +548,7 @@ export class VeridexSDK {
             s: '0x' + signature.s.toString(16).padStart(64, '0'),
             publicKeyX: '0x' + credential.publicKeyX.toString(16).padStart(64, '0'),
             publicKeyY: '0x' + credential.publicKeyY.toString(16).padStart(64, '0'),
-            targetChain: params.destinationChain,
+            targetChain: params.sourceChain,
             actionPayload,
             nonce: Number(nonce),
         };
@@ -580,11 +585,13 @@ export class VeridexSDK {
             },
         });
 
+        // For BRIDGE: targetChain (where VAA is executed) = sourceChain
+        // The actual destination for funds is in destinationChain
         return {
             transactionHash: txHash,
             sequence,
             userKeyHash: credential.keyHash,
-            targetChain: params.destinationChain,
+            targetChain: params.sourceChain,
             blockNumber: 0,
             params,
             sourceChain: params.sourceChain,

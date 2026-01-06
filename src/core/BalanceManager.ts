@@ -72,6 +72,7 @@ const DEFAULT_RPC_URLS: Record<number, string> = {
 const TESTNET_TOKEN_PRICES: Record<string, number> = {
     ETH: 2500,
     WETH: 2500,
+    'WETH.BASE': 2500, // Wormhole-wrapped Base WETH
     USDC: 1,
     USDT: 1,
     DAI: 1,
