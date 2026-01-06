@@ -543,7 +543,7 @@ export class VeridexSDK {
             s: '0x' + signature.s.toString(16).padStart(64, '0'),
             publicKeyX: '0x' + credential.publicKeyX.toString(16).padStart(64, '0'),
             publicKeyY: '0x' + credential.publicKeyY.toString(16).padStart(64, '0'),
-            targetChain: params.sourceChain,
+            targetChain: params.destinationChain,
             actionPayload,
             nonce: Number(nonce),
         };
@@ -584,7 +584,7 @@ export class VeridexSDK {
             transactionHash: txHash,
             sequence,
             userKeyHash: credential.keyHash,
-            targetChain: params.sourceChain,
+            targetChain: params.destinationChain,
             blockNumber: 0,
             params,
             sourceChain: params.sourceChain,

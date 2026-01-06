@@ -67,7 +67,7 @@ const ERC20_ABI = [
 
 const HUB_ABI = [
     'function dispatch(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) signature, uint256 publicKeyX, uint256 publicKeyY, uint16 targetChain, bytes actionPayload, uint256 nonce) payable returns (uint64 sequence)',
-    'function getNonce(bytes32 userKeyHash) view returns (uint256)',
+    'function userNonces(bytes32 userKeyHash) view returns (uint256)',
     'function getMessageFee() view returns (uint256)',
     'function getVaultAddress(bytes32 userKeyHash) view returns (address)',
     'function vaultExists(bytes32 userKeyHash) view returns (bool)',
@@ -175,7 +175,7 @@ export class EVMClient implements ChainClient {
     }
 
     async getNonce(userKeyHash: string): Promise<bigint> {
-        const nonce = await this.hubContract.getNonce(userKeyHash);
+        const nonce = await this.hubContract.userNonces(userKeyHash);
         return BigInt(nonce.toString());
     }
 

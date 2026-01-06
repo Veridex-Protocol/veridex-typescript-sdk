@@ -390,7 +390,7 @@ export const WORMHOLE_API = {
 export const HUB_ABI = [
   'function authenticateAndDispatch((bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, uint16 targetChain, bytes actionPayload) external payable returns (uint64 sequence)',
   'function authenticateRawAndDispatch(uint256 r, uint256 s, bytes32 messageHash, uint256 publicKeyX, uint256 publicKeyY, uint16 targetChain, bytes actionPayload, uint256 nonce) external payable returns (uint64 sequence)',
-  'function getNonce(bytes32 userKeyHash) external view returns (uint256)',
+  'function userNonces(bytes32 userKeyHash) external view returns (uint256)',
   'function encodeTransferAction(address token, address recipient, uint256 amount) external pure returns (bytes)',
   'function encodeExecuteAction(address target, uint256 value, bytes data) external pure returns (bytes)',
   'function encodeBridgeAction(bytes32 token, uint256 amount, uint16 targetChain, bytes32 recipient) external pure returns (bytes)',
