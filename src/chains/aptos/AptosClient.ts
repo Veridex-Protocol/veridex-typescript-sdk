@@ -2,9 +2,10 @@
  * Veridex Protocol SDK - Aptos Chain Client
  * 
  * Implementation of ChainClient interface for Aptos blockchain
+ * Updated to use @aptos-labs/ts-sdk v5.x
  */
 
-import { AptosClient as AptosSDK, Types } from 'aptos';
+import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { sha3_256 } from 'js-sha3';
 import type {
     ChainClient,
@@ -23,32 +24,13 @@ import { encodeTransferAction, encodeExecuteAction, encodeBridgeAction } from '.
 // ============================================================================
 
 /**
- * Normalize Aptos RPC URL to work around legacy SDK origin mismatch bug.
- * The legacy `aptos` SDK compares URL origins and fails when the server
- * reports `https://host:443` but we provide `https://host` (no explicit port).
- * 
- * This function:
- * 1. Strips trailing slashes and `/v1` suffix
- * 2. Adds explicit `:443` for HTTPS URLs without a port
+ * Get Aptos network from string configuration
+ * The new SDK works best with built-in network configuration
  */
-function normalizeAptosRpcUrl(rpcUrl: string): string {
-    const trimmed = rpcUrl.trim().replace(/\/+$/, '');
-    const withoutV1 = trimmed.replace(/\/v1$/, '');
-    
-    try {
-        const url = new URL(withoutV1);
-        
-        // Work around legacy `aptos` SDK origin mismatch where the server reports
-        // `https://host:443` but the provided URL origin is `https://host`.
-        if (url.protocol === 'https:' && !url.port) {
-            url.port = '443';
-        }
-        
-        return url.origin;
-    } catch {
-        // If URL parsing fails, return as-is
-        return withoutV1;
-    }
+function getAptosNetworkEnum(network?: string): Network {
+    if (network === 'mainnet') return Network.MAINNET;
+    if (network === 'devnet') return Network.DEVNET;
+    return Network.TESTNET; // Default to testnet
 }
 
 // ============================================================================
@@ -77,18 +59,18 @@ export interface AptosClientConfig {
  */
 export class AptosClient implements ChainClient {
     private config: ChainConfig;
-    private client: AptosSDK;
+    private client: Aptos;
     private moduleAddress: string;
 
     constructor(config: AptosClientConfig) {
-        // Normalize RPC URL to work around legacy aptos SDK origin mismatch bug
-        const normalizedRpcUrl = normalizeAptosRpcUrl(config.rpcUrl);
+        // Use SDK's built-in network configuration (more reliable than custom URLs)
+        const network = getAptosNetworkEnum(config.network);
         
         this.config = {
             name: `Aptos ${config.network || 'mainnet'}`,
             chainId: config.wormholeChainId,
             wormholeChainId: config.wormholeChainId,
-            rpcUrl: normalizedRpcUrl,
+            rpcUrl: config.rpcUrl, // Keep for reference, but not used for SDK
             explorerUrl: config.network === 'testnet'
                 ? 'https://explorer.aptoslabs.com?network=testnet'
                 : 'https://explorer.aptoslabs.com',
@@ -100,7 +82,10 @@ export class AptosClient implements ChainClient {
             },
         };
 
-        this.client = new AptosSDK(normalizedRpcUrl);
+        // Create Aptos client with built-in network configuration
+        // This is more reliable than custom fullnode URLs
+        const aptosConfig = new AptosConfig({ network });
+        this.client = new Aptos(aptosConfig);
         this.moduleAddress = config.moduleAddress;
     }
 
@@ -112,14 +97,20 @@ export class AptosClient implements ChainClient {
         try {
             const vaultAddress = this.computeVaultAddressFromHash(userKeyHash);
 
-            // Query vault resource
-            const resource = await this.client.getAccountResource(
-                vaultAddress,
-                `${this.moduleAddress}::vault::Vault`
+            // Query vault resource using new SDK
+            const resources = await this.client.getAccountResources({ 
+                accountAddress: vaultAddress 
+            });
+            const vaultResource = resources.find(
+                (r: { type: string }) => r.type === `${this.moduleAddress}::vault::Vault`
             );
+            
+            if (!vaultResource) {
+                return 0n;
+            }
 
-            if (resource && resource.data) {
-                const data = resource.data as any;
+            if (vaultResource && vaultResource.data) {
+                const data = vaultResource.data as { nonce?: string | number };
                 return BigInt(data.nonce || 0);
             }
 
@@ -263,25 +254,25 @@ export class AptosClient implements ChainClient {
             const keyHashHex = `0x${rawHex.padStart(64, '0')}`;
             
             // First check if vault exists to avoid noisy 400 errors in console
-            const existsPayload = {
-                function: `${this.moduleAddress}::spoke::vault_exists`,
-                type_arguments: [],
-                arguments: [keyHashHex],
-            };
-            
-            const existsResponse = await this.client.view(existsPayload);
+            const existsResponse = await this.client.view({
+                payload: {
+                    function: `${this.moduleAddress}::spoke::vault_exists`,
+                    typeArguments: [],
+                    functionArguments: [keyHashHex],
+                }
+            });
             if (!existsResponse || existsResponse.length === 0 || existsResponse[0] !== true) {
                 return null; // Vault doesn't exist
             }
             
             // Vault exists, now get the address
-            const payload = {
-                function: `${this.moduleAddress}::spoke::get_vault_address`,
-                type_arguments: [],
-                arguments: [keyHashHex],
-            };
-
-            const response = await this.client.view(payload);
+            const response = await this.client.view({
+                payload: {
+                    function: `${this.moduleAddress}::spoke::get_vault_address`,
+                    typeArguments: [],
+                    functionArguments: [keyHashHex],
+                }
+            });
             
             if (response && response.length > 0) {
                 const vaultAddress = response[0] as string;
@@ -455,10 +446,10 @@ export class AptosClient implements ChainClient {
      */
     async getNativeBalance(address: string): Promise<bigint> {
         try {
-            const resource = await this.client.getAccountResource(
-                address,
-                '0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>'
-            );
+            const resource = await this.client.getAccountResource({
+                accountAddress: address,
+                resourceType: '0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>'
+            });
 
             if (resource && resource.data) {
                 const data = resource.data as any;
@@ -482,10 +473,10 @@ export class AptosClient implements ChainClient {
                 ? tokenAddress
                 : `${tokenAddress}::coin::Coin`;
 
-            const resource = await this.client.getAccountResource(
-                ownerAddress,
-                `0x1::coin::CoinStore<${coinType}>`
-            );
+            const resource = await this.client.getAccountResource({
+                accountAddress: ownerAddress,
+                resourceType: `0x1::coin::CoinStore<${coinType}>`
+            });
 
             if (resource && resource.data) {
                 const data = resource.data as any;
@@ -562,7 +553,7 @@ export class AptosClient implements ChainClient {
     /**
      * Get Aptos client instance for advanced usage
      */
-    getClient(): AptosSDK {
+    getClient(): Aptos {
         return this.client;
     }
 
@@ -584,17 +575,20 @@ export class AptosClient implements ChainClient {
     /**
      * Get transaction by hash
      */
-    async getTransaction(txHash: string): Promise<Types.Transaction> {
-        return await this.client.getTransactionByHash(txHash);
+    async getTransaction(txHash: string): Promise<any> {
+        return await this.client.getTransactionByHash({ transactionHash: txHash });
     }
 
     /**
      * Wait for transaction confirmation
      */
-    async waitForTransaction(txHash: string, timeoutSecs: number = 30): Promise<Types.Transaction> {
-        return await this.client.waitForTransactionWithResult(txHash, {
-            timeoutSecs,
-            checkSuccess: true,
+    async waitForTransaction(txHash: string, timeoutSecs: number = 30): Promise<any> {
+        return await this.client.waitForTransaction({
+            transactionHash: txHash,
+            options: {
+                timeoutSecs,
+                checkSuccess: true,
+            }
         });
     }
 
@@ -624,10 +618,10 @@ export class AptosClient implements ChainClient {
         try {
             const vaultAddress = this.computeVaultAddressFromHash(ownerKeyHash);
 
-            const resource = await this.client.getAccountResource(
-                vaultAddress,
-                `${this.moduleAddress}::vault::Vault`
-            );
+            const resource = await this.client.getAccountResource({
+                accountAddress: vaultAddress,
+                resourceType: `${this.moduleAddress}::vault::Vault`
+            });
 
             if (!resource || !resource.data) {
                 return null;
@@ -664,10 +658,10 @@ export class AptosClient implements ChainClient {
      */
     async isVaaProcessed(vaaHash: string): Promise<boolean> {
         try {
-            const resource = await this.client.getAccountResource(
-                this.moduleAddress,
-                `${this.moduleAddress}::spoke::ProcessedVAAs`
-            );
+            const resource = await this.client.getAccountResource({
+                accountAddress: this.moduleAddress,
+                resourceType: `${this.moduleAddress}::spoke::ProcessedVAAs`
+            });
 
             if (!resource || !resource.data) {
                 return false;
@@ -694,10 +688,10 @@ export class AptosClient implements ChainClient {
      */
     async isProtocolPaused(): Promise<boolean> {
         try {
-            const resource = await this.client.getAccountResource(
-                this.moduleAddress,
-                `${this.moduleAddress}::spoke::Config`
-            );
+            const resource = await this.client.getAccountResource({
+                accountAddress: this.moduleAddress,
+                resourceType: `${this.moduleAddress}::spoke::Config`
+            });
 
             if (!resource || !resource.data) {
                 return false;

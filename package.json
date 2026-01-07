@@ -96,6 +96,7 @@
     "release:public": "cd ../.. && git subtree push --prefix=packages/sdk sdk-public main"
   },
   "dependencies": {
+    "@aptos-labs/ts-sdk": "^5.2.0",
     "@mysten/bcs": "1.9.2",
     "@mysten/sui": "^1.0.0",
     "@simplewebauthn/browser": "^9.0.1",
@@ -103,7 +104,6 @@
     "@solana/web3.js": "^1.95.4",
     "@wormhole-foundation/sdk": "^0.10.0",
     "@wormhole-foundation/wormhole-query-sdk": "^0.0.14",
-    "aptos": "^1.21.0",
     "axios": "^1.7.9",
     "ethers": "^6.11.1",
     "js-sha3": "^0.9.3",
