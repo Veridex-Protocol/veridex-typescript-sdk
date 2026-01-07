@@ -19,6 +19,39 @@ import type {
 import { encodeTransferAction, encodeExecuteAction, encodeBridgeAction } from '../../payload.js';
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Normalize Aptos RPC URL to work around legacy SDK origin mismatch bug.
+ * The legacy `aptos` SDK compares URL origins and fails when the server
+ * reports `https://host:443` but we provide `https://host` (no explicit port).
+ * 
+ * This function:
+ * 1. Strips trailing slashes and `/v1` suffix
+ * 2. Adds explicit `:443` for HTTPS URLs without a port
+ */
+function normalizeAptosRpcUrl(rpcUrl: string): string {
+    const trimmed = rpcUrl.trim().replace(/\/+$/, '');
+    const withoutV1 = trimmed.replace(/\/v1$/, '');
+    
+    try {
+        const url = new URL(withoutV1);
+        
+        // Work around legacy `aptos` SDK origin mismatch where the server reports
+        // `https://host:443` but the provided URL origin is `https://host`.
+        if (url.protocol === 'https:' && !url.port) {
+            url.port = '443';
+        }
+        
+        return url.origin;
+    } catch {
+        // If URL parsing fails, return as-is
+        return withoutV1;
+    }
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -48,11 +81,14 @@ export class AptosClient implements ChainClient {
     private moduleAddress: string;
 
     constructor(config: AptosClientConfig) {
+        // Normalize RPC URL to work around legacy aptos SDK origin mismatch bug
+        const normalizedRpcUrl = normalizeAptosRpcUrl(config.rpcUrl);
+        
         this.config = {
             name: `Aptos ${config.network || 'mainnet'}`,
             chainId: config.wormholeChainId,
             wormholeChainId: config.wormholeChainId,
-            rpcUrl: config.rpcUrl,
+            rpcUrl: normalizedRpcUrl,
             explorerUrl: config.network === 'testnet'
                 ? 'https://explorer.aptoslabs.com?network=testnet'
                 : 'https://explorer.aptoslabs.com',
@@ -64,7 +100,7 @@ export class AptosClient implements ChainClient {
             },
         };
 
-        this.client = new AptosSDK(config.rpcUrl);
+        this.client = new AptosSDK(normalizedRpcUrl);
         this.moduleAddress = config.moduleAddress;
     }
 
