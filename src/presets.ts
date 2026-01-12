@@ -195,10 +195,12 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       name: 'Sepolia',
       chainId: 11155111,
       wormholeChainId: 10002,
-      rpcUrl: 'https://rpc.sepolia.org',
+      rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
       explorerUrl: 'https://sepolia.etherscan.io',
       isEvm: true,
       contracts: {
+        vaultFactory: '0x07F608AFf6d63b68029488b726d895c4Bb593038',
+        vaultImplementation: '0xD66153fccFB6731fB6c4944FbD607ba86A76a1f6',
         wormholeCoreBridge: '0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78',
         tokenBridge: '0xDB5492265f6038831E89f495670FF909aDe94bd9',
       },

@@ -154,6 +154,45 @@ export const ARBITRUM_SEPOLIA_TOKENS: ChainTokenList = {
 };
 
 // ============================================================================
+// Ethereum Sepolia (Spoke Chain) - Wormhole Chain ID 10002
+// ============================================================================
+
+export const ETHEREUM_SEPOLIA_TOKENS: ChainTokenList = {
+    wormholeChainId: 10002,
+    chainName: 'Ethereum Sepolia',
+    nativeToken: {
+        symbol: 'ETH',
+        name: 'Ether',
+        address: NATIVE_TOKEN_ADDRESS,
+        decimals: 18,
+        isNative: true,
+    },
+    tokens: [
+        {
+            symbol: 'USDC',
+            name: 'USD Coin (Test)',
+            address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Circle USDC Sepolia
+            decimals: 6,
+            isNative: false,
+        },
+        {
+            symbol: 'WETH',
+            name: 'Wrapped Ether',
+            address: '0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9', // WETH Sepolia
+            decimals: 18,
+            isNative: false,
+        },
+        {
+            symbol: 'LINK',
+            name: 'Chainlink Token',
+            address: '0x779877A7B0D9E8603169DdbD7836e478b4624789', // LINK Sepolia
+            decimals: 18,
+            isNative: false,
+        },
+    ],
+};
+
+// ============================================================================
 // Token Registry
 // ============================================================================
 
@@ -164,6 +203,7 @@ export const TOKEN_REGISTRY: Record<number, ChainTokenList> = {
     10004: BASE_SEPOLIA_TOKENS,
     10005: OPTIMISM_SEPOLIA_TOKENS,
     10003: ARBITRUM_SEPOLIA_TOKENS,
+    10002: ETHEREUM_SEPOLIA_TOKENS,
 };
 
 // ============================================================================
