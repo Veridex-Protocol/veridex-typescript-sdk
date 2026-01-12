@@ -198,7 +198,7 @@ export class PasskeyManager {
             return { credential: storedCredential, signature };
         }
 
-        // 2. Ttry to fetch from the Relayer/API if configured
+        // 2. Try to fetch from the Relayer/API if configured
         if (this.config.relayerUrl) {
             storedCredential = await this.loadCredentialFromRelayer(credentialId);
             if (storedCredential) {
@@ -209,10 +209,13 @@ export class PasskeyManager {
         }
 
         // 3. If we still don't have it, we can't verify signatures or derive the keyHash
+        const hasRelayer = !!this.config.relayerUrl;
         throw new Error(
             'Credential not found. ' +
             'This passkey was registered on a different device or the data was cleared. ' +
-            'Please re-register this passkey or sync your account.'
+            (hasRelayer 
+                ? 'The credential was not found. Please register a new passkey.'
+                : 'Please register a new passkey or ensure the relayer URL is configured.')
         );
     }
 
@@ -442,6 +445,17 @@ export class PasskeyManager {
                 return null;
             }
 
+            // Validate required fields before attempting BigInt conversion
+            if (!data.credentialId || !data.publicKeyX || !data.publicKeyY || !data.keyHash) {
+                console.warn('Relayer returned incomplete credential data:', {
+                    hasCredentialId: !!data.credentialId,
+                    hasPublicKeyX: !!data.publicKeyX,
+                    hasPublicKeyY: !!data.publicKeyY,
+                    hasKeyHash: !!data.keyHash,
+                });
+                return null;
+            }
+
             return {
                 credentialId: data.credentialId,
                 publicKeyX: BigInt(data.publicKeyX),
@@ -474,6 +488,17 @@ export class PasskeyManager {
 
             const data = await response.json();
             if (!data.exists) {
+                return null;
+            }
+
+            // Validate required fields before attempting BigInt conversion
+            if (!data.credentialId || !data.publicKeyX || !data.publicKeyY || !data.keyHash) {
+                console.warn('Relayer returned incomplete credential data for keyHash:', {
+                    hasCredentialId: !!data.credentialId,
+                    hasPublicKeyX: !!data.publicKeyX,
+                    hasPublicKeyY: !!data.publicKeyY,
+                    hasKeyHash: !!data.keyHash,
+                });
                 return null;
             }
 
