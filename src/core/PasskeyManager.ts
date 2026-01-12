@@ -157,6 +157,8 @@ export class PasskeyManager {
         return this.parseAuthenticationResponse(response);
     }
 
+
+
     /**
      * Authenticate using a discoverable credential (passkey)
      * This allows sign-in without knowing the credential ID ahead of time.
@@ -176,96 +178,141 @@ export class PasskeyManager {
         const actualChallenge = challenge ?? ethers.randomBytes(32);
         const challengeBase64 = base64URLEncode(actualChallenge);
 
-        // Use discoverable credentials - no allowCredentials means the authenticator
-        // will show all available passkeys for this RP
+        // Allow any registered credential (discoverable or not)
         const options: PublicKeyCredentialRequestOptionsJSON = {
             challenge: challengeBase64,
             rpId: this.config.rpId,
-            // No allowCredentials = discoverable credential flow
             userVerification: this.config.userVerification,
             timeout: this.config.timeout,
         };
 
         const response = await startAuthentication(options);
-        
-        // Extract the credential ID that was used
         const credentialId = response.id;
-        
-        // Parse the signature
         const signature = this.parseAuthenticationResponse(response);
-        
-        // For discoverable credentials, we need to recover the public key from the response
-        // or require it to be stored. Since WebAuthn doesn't return the public key on auth,
-        // we need to check if we have it stored, or use a different approach.
-        
-        // Try to load from localStorage first (might have been stored during registration)
-        let storedCredential = this.loadCredentialById(credentialId);
-        
+
+        // 1. Try to find the credential in our local cache (could be one of many)
+        let storedCredential = this.findCredentialById(credentialId);
+
         if (storedCredential) {
             this.credential = storedCredential;
             return { credential: storedCredential, signature };
         }
-        
-        // If not in localStorage, try to fetch from relayer (cross-device recovery)
+
+        // 2. Ttry to fetch from the Relayer/API if configured
         if (this.config.relayerUrl) {
             storedCredential = await this.loadCredentialFromRelayer(credentialId);
             if (storedCredential) {
                 this.credential = storedCredential;
-                // Cache locally for future use
-                this.saveToLocalStorage();
+                this.addCredentialToStorage(storedCredential);
                 return { credential: storedCredential, signature };
             }
         }
-        
-        // If we don't have the public key stored anywhere, we need to throw an error
-        // because we can't derive the keyHash without the public key
+
+        // 3. If we still don't have it, we can't verify signatures or derive the keyHash
         throw new Error(
             'Credential not found. ' +
             'This passkey was registered on a different device or the data was cleared. ' +
-            'Please register a new passkey or ensure the relayer URL is configured.'
+            'Please re-register this passkey or sync your account.'
         );
     }
 
     /**
-     * Load a credential by its ID from localStorage
-     * Used for discoverable credential authentication
+     * Find a credential by ID in the list of stored credentials
      */
-    private loadCredentialById(credentialId: string, key = 'veridex_credential'): PasskeyCredential | null {
-        if (typeof window === 'undefined') {
-            return null;
-        }
+    private findCredentialById(credentialId: string): PasskeyCredential | null {
+        if (typeof window === 'undefined') return null;
+
+        const stored = this.getAllStoredCredentials();
+        return stored.find(c => c.credentialId === credentialId) || null;
+    }
+
+    /**
+     * Get all credentials stored in localStorage
+     */
+    getAllStoredCredentials(key = 'veridex_credentials'): PasskeyCredential[] {
+        if (typeof window === 'undefined') return [];
 
         const stored = localStorage.getItem(key);
         if (!stored) {
-            return null;
+            // Fallback to legacy single key for backward compatibility
+            const legacy = localStorage.getItem('veridex_credential');
+            if (legacy) {
+                try {
+                    const data = JSON.parse(legacy);
+                    // Migrate to new format
+                    const cred = this.parseStoredCredential(data);
+                    if (cred) {
+                        this.saveCredentials([cred], key);
+                        localStorage.removeItem('veridex_credential');
+                        return [cred];
+                    }
+                } catch (e) { /* ignore */ }
+            }
+            return [];
         }
 
         try {
             const data = JSON.parse(stored);
-            // Check if this is the right credential
-            if (data.credentialId === credentialId) {
-                return {
-                    credentialId: data.credentialId,
-                    publicKeyX: BigInt(data.publicKeyX),
-                    publicKeyY: BigInt(data.publicKeyY),
-                    keyHash: data.keyHash,
-                };
+            if (Array.isArray(data)) {
+                return data.map(item => this.parseStoredCredential(item)).filter((c): c is PasskeyCredential => c !== null);
             }
-            return null;
+            return [];
         } catch (error) {
-            console.error('Failed to load credential:', error);
+            console.error('Failed to load credentials:', error);
+            return [];
+        }
+    }
+
+    private parseStoredCredential(data: any): PasskeyCredential | null {
+        try {
+            return {
+                credentialId: data.credentialId,
+                publicKeyX: BigInt(data.publicKeyX),
+                publicKeyY: BigInt(data.publicKeyY),
+                keyHash: data.keyHash,
+            };
+        } catch {
             return null;
         }
     }
 
     /**
-     * Check if there's a stored credential for this RP
+     * Save a list of credentials to localStorage
      */
-    hasStoredCredential(key = 'veridex_credential'): boolean {
-        if (typeof window === 'undefined') {
-            return false;
+    saveCredentials(credentials: PasskeyCredential[], key = 'veridex_credentials'): void {
+        if (typeof window === 'undefined') return;
+
+        const data = credentials.map(c => ({
+            credentialId: c.credentialId,
+            publicKeyX: c.publicKeyX.toString(),
+            publicKeyY: c.publicKeyY.toString(),
+            keyHash: c.keyHash,
+        }));
+
+        localStorage.setItem(key, JSON.stringify(data));
+    }
+
+    /**
+     * Add a single credential to storage (append or update)
+     */
+    addCredentialToStorage(credential: PasskeyCredential): void {
+        const stored = this.getAllStoredCredentials();
+        const existingIndex = stored.findIndex(c => c.credentialId === credential.credentialId);
+
+        if (existingIndex >= 0) {
+            stored[existingIndex] = credential;
+        } else {
+            stored.push(credential);
         }
-        return localStorage.getItem(key) !== null;
+
+        this.saveCredentials(stored);
+    }
+
+    /**
+     * Check if there's ANY stored credential for this RP
+     */
+    hasStoredCredential(): boolean {
+        return this.getAllStoredCredentials().length > 0;
     }
 
     getCredential(): PasskeyCredential | null {
@@ -295,52 +342,37 @@ export class PasskeyManager {
         this.credential = null;
     }
 
-    saveToLocalStorage(key = 'veridex_credential'): void {
+    /**
+     * Save the current credential to localStorage (appends to list)
+     */
+    saveToLocalStorage(key = 'veridex_credentials'): void {
         if (!this.credential) {
             throw new Error('No credential to save');
         }
-        if (typeof window === 'undefined') {
-            throw new Error('localStorage is not available');
-        }
-
-        const data = {
-            credentialId: this.credential.credentialId,
-            publicKeyX: this.credential.publicKeyX.toString(),
-            publicKeyY: this.credential.publicKeyY.toString(),
-            keyHash: this.credential.keyHash,
-        };
-
-        localStorage.setItem(key, JSON.stringify(data));
+        this.addCredentialToStorage(this.credential);
     }
 
-    loadFromLocalStorage(key = 'veridex_credential'): PasskeyCredential | null {
+    loadFromLocalStorage(key = 'veridex_credentials'): PasskeyCredential | null {
         if (typeof window === 'undefined') {
             return null;
         }
 
-        const stored = localStorage.getItem(key);
-        if (!stored) {
-            return null;
-        }
-
-        try {
-            const data = JSON.parse(stored);
-            this.credential = {
-                credentialId: data.credentialId,
-                publicKeyX: BigInt(data.publicKeyX),
-                publicKeyY: BigInt(data.publicKeyY),
-                keyHash: data.keyHash,
-            };
+        // Return the most recently used credential, or the last one added
+        const stored = this.getAllStoredCredentials(key);
+        if (stored.length > 0) {
+            // Use the last one as default
+            this.credential = stored[stored.length - 1];
             return this.credential;
-        } catch (error) {
-            console.error('Failed to load credential from localStorage:', error);
-            return null;
         }
+
+        return null;
     }
 
-    removeFromLocalStorage(key = 'veridex_credential'): void {
+    removeFromLocalStorage(key = 'veridex_credentials'): void {
         if (typeof window !== 'undefined') {
             localStorage.removeItem(key);
+            // Also remove legacy key
+            localStorage.removeItem('veridex_credential');
         }
     }
 
