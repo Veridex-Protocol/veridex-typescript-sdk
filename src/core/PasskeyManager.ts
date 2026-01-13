@@ -213,7 +213,7 @@ export class PasskeyManager {
         throw new Error(
             'Credential not found. ' +
             'This passkey was registered on a different device or the data was cleared. ' +
-            (hasRelayer 
+            (hasRelayer
                 ? 'The credential was not found. Please register a new passkey.'
                 : 'Please register a new passkey or ensure the relayer URL is configured.')
         );
@@ -298,8 +298,8 @@ export class PasskeyManager {
     /**
      * Add a single credential to storage (append or update)
      */
-    addCredentialToStorage(credential: PasskeyCredential): void {
-        const stored = this.getAllStoredCredentials();
+    addCredentialToStorage(credential: PasskeyCredential, key = 'veridex_credentials'): void {
+        const stored = this.getAllStoredCredentials(key);
         const existingIndex = stored.findIndex(c => c.credentialId === credential.credentialId);
 
         if (existingIndex >= 0) {
@@ -308,7 +308,7 @@ export class PasskeyManager {
             stored.push(credential);
         }
 
-        this.saveCredentials(stored);
+        this.saveCredentials(stored, key);
     }
 
     /**
@@ -352,7 +352,7 @@ export class PasskeyManager {
         if (!this.credential) {
             throw new Error('No credential to save');
         }
-        this.addCredentialToStorage(this.credential);
+        this.addCredentialToStorage(this.credential, key);
     }
 
     loadFromLocalStorage(key = 'veridex_credentials'): PasskeyCredential | null {
