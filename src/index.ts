@@ -79,7 +79,25 @@ export type {
 // ============================================================================
 
 export { VeridexSDK } from './core/VeridexSDK.js';
-export { PasskeyManager } from './core/PasskeyManager.js';
+export { PasskeyManager, detectRpId } from './core/PasskeyManager.js';
+export type { PasskeyCredential, PasskeyManagerConfig, WebAuthnSignature } from './core/PasskeyManager.js';
+
+// Cross-Origin Authentication (for third-party apps)
+export { 
+    CrossOriginAuth, 
+    createCrossOriginAuth,
+    sendAuthResponse,
+    sendAuthError,
+    VERIDEX_RP_ID,
+    DEFAULT_AUTH_PORTAL_URL,
+    AUTH_MESSAGE_TYPES,
+} from './core/CrossOriginAuth.js';
+export type { 
+    CrossOriginAuthConfig, 
+    CrossOriginSession,
+    AuthPortalMessage,
+} from './core/CrossOriginAuth.js';
+
 export { WalletManager } from './core/WalletManager.js';
 export { BalanceManager } from './core/BalanceManager.js';
 export { TransactionTracker, getExplorerUrl, formatTransactionState } from './core/TransactionTracker.js';
@@ -186,10 +204,6 @@ export type {
     VeridexConfig,
     ChainConfig,
     WalletManagerConfig,
-
-    // Credentials
-    PasskeyCredential,
-    WebAuthnSignature,
 
     // Action Parameters
     TransferParams,

@@ -49,6 +49,50 @@ export interface PasskeyManagerConfig {
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Detects the appropriate RP ID for passkey sharing across subdomains.
+ * 
+ * - localhost/127.0.0.1 → returns as-is (for local development)
+ * - IP addresses → returns as-is
+ * - Subdomains (e.g., sera.veridex.network) → returns root domain (veridex.network)
+ * - Single-level domains → returns as-is
+ * 
+ * This allows passkeys created on any subdomain to work across all subdomains
+ * of the same root domain.
+ */
+function detectRpId(): string {
+    if (typeof window === 'undefined') return 'localhost';
+    
+    const hostname = window.location.hostname;
+    
+    // Keep localhost and IP addresses as-is
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+        return hostname;
+    }
+    
+    const parts = hostname.split('.');
+    
+    // Single-level domain (rare, but handle it)
+    if (parts.length <= 2) {
+        return hostname;
+    }
+    
+    // Extract root domain (last 2 parts)
+    // e.g., sera.veridex.network → veridex.network
+    // e.g., app.staging.veridex.network → veridex.network
+    return parts.slice(-2).join('.');
+}
+
+/** 
+ * Export the detectRpId function for external use.
+ * Apps can call this to see what RP ID will be used.
+ */
+export { detectRpId };
+
+// ============================================================================
 // PasskeyManager Class
 // ============================================================================
 
@@ -62,7 +106,7 @@ export class PasskeyManager {
     constructor(config: PasskeyManagerConfig = {}) {
         this.config = {
             rpName: config.rpName ?? 'Veridex Protocol',
-            rpId: config.rpId ?? (typeof window !== 'undefined' ? window.location.hostname : 'localhost'),
+            rpId: config.rpId ?? detectRpId(),
             timeout: config.timeout ?? 60000,
             userVerification: config.userVerification ?? 'required',
             authenticatorAttachment: config.authenticatorAttachment ?? 'platform',
