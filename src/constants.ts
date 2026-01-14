@@ -173,6 +173,20 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
       tokenBridge: '0x86F55A04690fd7815A3D802bD587e83eA888B239',
     },
   },
+  ethereumSepolia: {
+    name: 'Ethereum Sepolia',
+    chainId: 11155111,
+    wormholeChainId: 10002,
+    rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
+    explorerUrl: 'https://sepolia.etherscan.io',
+    isEvm: true,
+    contracts: {
+      vaultFactory: '0x07F608AFf6d63b68029488b726d895c4Bb593038',
+      vaultImplementation: '0xD66153fccFB6731fB6c4944FbD607ba86A76a1f6',
+      wormholeCoreBridge: '0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78',
+      tokenBridge: '0xDB5492265f6038831E89f495670FF909aDe94bd9',
+    },
+  },
   optimismSepolia: {
     name: 'Optimism Sepolia',
     chainId: 11155420,
