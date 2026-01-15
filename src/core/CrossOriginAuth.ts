@@ -51,8 +51,9 @@ import { PasskeyManager, type PasskeyCredential, type WebAuthnSignature } from '
 // Constants
 // ============================================================================
 
-/** The canonical Veridex RP ID for cross-origin passkeys */
-export const VERIDEX_RP_ID = 'veridex.network';
+// Re-export VERIDEX_RP_ID from PasskeyManager for consistency
+import { VERIDEX_RP_ID } from './PasskeyManager.js';
+export { VERIDEX_RP_ID };
 
 /** Default auth portal URL */
 export const DEFAULT_AUTH_PORTAL_URL = 'https://auth.veridex.network';
@@ -71,19 +72,19 @@ export const AUTH_MESSAGE_TYPES = {
 export interface CrossOriginAuthConfig {
     /** The Veridex RP ID (defaults to veridex.network) */
     rpId?: string;
-    
+
     /** Auth portal URL for popup/redirect flow */
     authPortalUrl?: string;
-    
+
     /** Authentication mode: popup or redirect */
     mode?: 'popup' | 'redirect';
-    
+
     /** Popup window features */
     popupFeatures?: string;
-    
+
     /** Timeout for auth operations (ms) */
     timeout?: number;
-    
+
     /** Callback URL for redirect mode */
     redirectUri?: string;
 }
@@ -91,19 +92,19 @@ export interface CrossOriginAuthConfig {
 export interface CrossOriginSession {
     /** User's vault address */
     address: string;
-    
+
     /** Session key public key (for signing transactions) */
     sessionPublicKey: string;
-    
+
     /** Session key (encrypted, stored on client) */
     encryptedSessionKey?: string;
-    
+
     /** When the session expires */
     expiresAt: number;
-    
+
     /** Proof of passkey ownership */
     signature: WebAuthnSignature;
-    
+
     /** The credential used */
     credential: PasskeyCredential;
 }
@@ -127,7 +128,7 @@ export interface AuthPortalMessage {
 export class CrossOriginAuth {
     private config: Required<CrossOriginAuthConfig>;
     private passkeyManager: PasskeyManager | null = null;
-    
+
     constructor(config: CrossOriginAuthConfig = {}) {
         this.config = {
             rpId: config.rpId ?? VERIDEX_RP_ID,
@@ -138,11 +139,11 @@ export class CrossOriginAuth {
             redirectUri: config.redirectUri ?? (typeof window !== 'undefined' ? window.location.href : ''),
         };
     }
-    
+
     // ========================================================================
     // Browser Capability Detection
     // ========================================================================
-    
+
     /**
      * Check if the browser supports Related Origin Requests.
      * This is a WebAuthn Level 3 feature that allows using passkeys across different domains.
@@ -151,7 +152,7 @@ export class CrossOriginAuth {
         if (typeof window === 'undefined' || !window.PublicKeyCredential) {
             return false;
         }
-        
+
         // Check for getClientCapabilities (WebAuthn L3)
         if ('getClientCapabilities' in PublicKeyCredential) {
             try {
@@ -162,21 +163,21 @@ export class CrossOriginAuth {
                 return false;
             }
         }
-        
+
         return false;
     }
-    
+
     /**
      * Check if WebAuthn is supported at all.
      */
     isSupported(): boolean {
         return PasskeyManager.isSupported();
     }
-    
+
     // ========================================================================
     // Related Origin Requests (Direct Method)
     // ========================================================================
-    
+
     /**
      * Authenticate using Related Origin Requests.
      * This allows using a passkey registered at veridex.network from any origin
@@ -194,11 +195,11 @@ export class CrossOriginAuth {
             rpId: this.config.rpId,
             rpName: 'Veridex Protocol',
         });
-        
+
         // Use discoverable credential flow (passkey autofill)
         return manager.authenticate(challenge);
     }
-    
+
     /**
      * Register a new passkey with veridex.network as the RP.
      * This should only be called from veridex.network origins.
@@ -208,14 +209,14 @@ export class CrossOriginAuth {
             rpId: this.config.rpId,
             rpName: 'Veridex Protocol',
         });
-        
+
         return manager.register(username, displayName);
     }
-    
+
     // ========================================================================
     // Auth Portal Flow (Popup/Redirect)
     // ========================================================================
-    
+
     /**
      * Authenticate via the Veridex Auth Portal.
      * Opens a popup or redirects to auth.veridex.network where the user
@@ -228,7 +229,7 @@ export class CrossOriginAuth {
             return this.initiateRedirectAuth();
         }
     }
-    
+
     /**
      * Popup-based authentication flow.
      */
@@ -239,35 +240,35 @@ export class CrossOriginAuth {
             authUrl.searchParams.set('state', state);
             authUrl.searchParams.set('origin', window.location.origin);
             authUrl.searchParams.set('callback', 'postMessage');
-            
+
             // Open popup
             const popup = window.open(
                 authUrl.toString(),
                 'veridex-auth',
                 this.config.popupFeatures
             );
-            
+
             if (!popup) {
                 reject(new Error('Failed to open auth popup. Please allow popups for this site.'));
                 return;
             }
-            
+
             // Set timeout
             const timeoutId = setTimeout(() => {
                 popup.close();
                 window.removeEventListener('message', messageHandler);
                 reject(new Error('Authentication timed out'));
             }, this.config.timeout);
-            
+
             // Listen for response
             const messageHandler = (event: MessageEvent<AuthPortalMessage>) => {
                 // Validate origin
                 if (!event.origin.includes('veridex.network')) {
                     return;
                 }
-                
+
                 const { type, payload } = event.data;
-                
+
                 if (type === AUTH_MESSAGE_TYPES.AUTH_RESPONSE) {
                     clearTimeout(timeoutId);
                     window.removeEventListener('message', messageHandler);
@@ -281,34 +282,34 @@ export class CrossOriginAuth {
                     reject(new Error(error.error));
                 }
             };
-            
+
             window.addEventListener('message', messageHandler);
         });
     }
-    
+
     /**
      * Redirect-based authentication flow.
      * Stores state in sessionStorage and redirects to auth portal.
      */
     private async initiateRedirectAuth(): Promise<CrossOriginSession> {
         const state = this.generateState();
-        
+
         // Store state for verification after redirect
         sessionStorage.setItem('veridex_auth_state', state);
         sessionStorage.setItem('veridex_auth_redirect', this.config.redirectUri);
-        
+
         const authUrl = new URL('/auth', this.config.authPortalUrl);
         authUrl.searchParams.set('state', state);
         authUrl.searchParams.set('redirect_uri', this.config.redirectUri);
         authUrl.searchParams.set('origin', window.location.origin);
-        
+
         // Redirect - this will not resolve, page navigates away
         window.location.href = authUrl.toString();
-        
+
         // This promise never resolves as page navigates
-        return new Promise(() => {});
+        return new Promise(() => { });
     }
-    
+
     /**
      * Complete redirect-based authentication.
      * Call this on your callback page to extract the session from URL params.
@@ -318,35 +319,35 @@ export class CrossOriginAuth {
         const session = params.get('session');
         const state = params.get('state');
         const error = params.get('error');
-        
+
         // Verify state
         const storedState = sessionStorage.getItem('veridex_auth_state');
         if (state !== storedState) {
             throw new Error('Invalid auth state - possible CSRF attack');
         }
-        
+
         // Clean up
         sessionStorage.removeItem('veridex_auth_state');
         sessionStorage.removeItem('veridex_auth_redirect');
-        
+
         // Clear URL params
         window.history.replaceState({}, '', window.location.pathname);
-        
+
         if (error) {
             throw new Error(error);
         }
-        
+
         if (!session) {
             return null;
         }
-        
+
         return JSON.parse(atob(session)) as CrossOriginSession;
     }
-    
+
     // ========================================================================
     // Utility Methods
     // ========================================================================
-    
+
     /**
      * Generate a random state string for CSRF protection.
      */
@@ -355,14 +356,14 @@ export class CrossOriginAuth {
         crypto.getRandomValues(array);
         return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
     }
-    
+
     /**
      * Get the RP ID being used.
      */
     getRpId(): string {
         return this.config.rpId;
     }
-    
+
     /**
      * Get the auth portal URL.
      */
@@ -417,7 +418,7 @@ export function sendAuthResponse(
         // Redirect mode - encode session in URL
         const redirectUri = new URLSearchParams(window.location.search).get('redirect_uri');
         const state = new URLSearchParams(window.location.search).get('state');
-        
+
         if (redirectUri) {
             const url = new URL(redirectUri);
             url.searchParams.set('session', btoa(JSON.stringify(session)));
@@ -444,7 +445,7 @@ export function sendAuthError(
     } else {
         const redirectUri = new URLSearchParams(window.location.search).get('redirect_uri');
         const state = new URLSearchParams(window.location.search).get('state');
-        
+
         if (redirectUri) {
             const url = new URL(redirectUri);
             url.searchParams.set('error', error);

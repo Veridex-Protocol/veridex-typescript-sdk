@@ -49,41 +49,84 @@ export interface PasskeyManagerConfig {
 }
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * The canonical Veridex RP ID for cross-domain passkey sharing.
+ * All Veridex SDK instances should use this RP ID to enable passkey
+ * portability across different applications and domains.
+ * 
+ * This works via W3C Related Origin Requests (ROR) - veridex.network
+ * hosts a .well-known/webauthn file that lists allowed origins.
+ */
+export const VERIDEX_RP_ID = 'veridex.network';
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
 /**
- * Detects the appropriate RP ID for passkey sharing across subdomains.
+ * Detects the appropriate RP ID for passkey sharing.
  * 
- * - localhost/127.0.0.1 → returns as-is (for local development)
+ * For production: Returns VERIDEX_RP_ID ('veridex.network') to enable
+ * cross-domain passkey sharing via Related Origin Requests (ROR).
+ * 
+ * For local development:
+ * - localhost/127.0.0.1 → returns as-is
  * - IP addresses → returns as-is
- * - Subdomains (e.g., sera.veridex.network) → returns root domain (veridex.network)
- * - Single-level domains → returns as-is
  * 
- * This allows passkeys created on any subdomain to work across all subdomains
- * of the same root domain.
+ * @param forceLocal - If true, uses local domain detection instead of canonical RP ID
  */
-function detectRpId(): string {
+function detectRpId(forceLocal?: boolean): string {
     if (typeof window === 'undefined') return 'localhost';
-    
+
     const hostname = window.location.hostname;
-    
-    // Keep localhost and IP addresses as-is
+
+    // For local development, always use the actual hostname
     if (hostname === 'localhost' || hostname === '127.0.0.1' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
         return hostname;
     }
-    
-    const parts = hostname.split('.');
-    
-    // Single-level domain (rare, but handle it)
-    if (parts.length <= 2) {
-        return hostname;
+
+    // If forceLocal is true, detect from hostname (legacy behavior)
+    if (forceLocal) {
+        const parts = hostname.split('.');
+        if (parts.length <= 2) {
+            return hostname;
+        }
+        return parts.slice(-2).join('.');
     }
-    
-    // Extract root domain (last 2 parts)
-    // e.g., sera.veridex.network → veridex.network
-    // e.g., app.staging.veridex.network → veridex.network
-    return parts.slice(-2).join('.');
+
+    // Default: Use canonical Veridex RP ID for cross-domain passkey sharing
+    return VERIDEX_RP_ID;
+}
+
+/**
+ * Check if the browser supports Related Origin Requests (ROR).
+ * This is a WebAuthn Level 3 feature that allows using passkeys
+ * across different domains listed in the RP's .well-known/webauthn file.
+ * 
+ * @returns true if ROR is supported, false otherwise
+ */
+export async function supportsRelatedOrigins(): Promise<boolean> {
+    if (typeof window === 'undefined' || !window.PublicKeyCredential) {
+        return false;
+    }
+
+    // Check for getClientCapabilities (WebAuthn L3)
+    if ('getClientCapabilities' in PublicKeyCredential) {
+        try {
+            const getCapabilities = (PublicKeyCredential as unknown as {
+                getClientCapabilities: () => Promise<{ relatedOrigins?: boolean }>
+            }).getClientCapabilities;
+            const capabilities = await getCapabilities();
+            return capabilities?.relatedOrigins === true;
+        } catch {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 /** 

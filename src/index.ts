@@ -48,13 +48,13 @@
 export {
     // Main factory function
     createSDK,
-    
+
     // Convenience factories
     createHubSDK,
     createTestnetSDK,
     createMainnetSDK,
     createSessionSDK,
-    
+
     // Chain presets
     CHAIN_NAMES,
     CHAIN_PRESETS,
@@ -79,21 +79,20 @@ export type {
 // ============================================================================
 
 export { VeridexSDK } from './core/VeridexSDK.js';
-export { PasskeyManager, detectRpId } from './core/PasskeyManager.js';
+export { PasskeyManager, detectRpId, VERIDEX_RP_ID, supportsRelatedOrigins } from './core/PasskeyManager.js';
 export type { PasskeyCredential, PasskeyManagerConfig, WebAuthnSignature } from './core/PasskeyManager.js';
 
 // Cross-Origin Authentication (for third-party apps)
-export { 
-    CrossOriginAuth, 
+export {
+    CrossOriginAuth,
     createCrossOriginAuth,
     sendAuthResponse,
     sendAuthError,
-    VERIDEX_RP_ID,
     DEFAULT_AUTH_PORTAL_URL,
     AUTH_MESSAGE_TYPES,
 } from './core/CrossOriginAuth.js';
-export type { 
-    CrossOriginAuthConfig, 
+export type {
+    CrossOriginAuthConfig,
     CrossOriginSession,
     AuthPortalMessage,
 } from './core/CrossOriginAuth.js';
@@ -104,8 +103,8 @@ export { TransactionTracker, getExplorerUrl, formatTransactionState } from './co
 export { ChainDetector, createChainDetector } from './core/ChainDetector.js';
 
 // Issue #26: Human-Readable Transaction Summaries
-export { 
-    TransactionParser, 
+export {
+    TransactionParser,
     createTransactionParser,
     createAuditEntry,
     logTransactionSummary,
@@ -113,8 +112,8 @@ export {
 export type { TransactionAuditEntry } from './core/TransactionParser.js';
 
 // Issue #27: Spending Limits Configuration
-export { 
-    SpendingLimitsManager, 
+export {
+    SpendingLimitsManager,
     createSpendingLimitsManager,
 } from './core/SpendingLimitsManager.js';
 export type { SpendingLimitsManagerConfig } from './core/SpendingLimitsManager.js';
@@ -152,7 +151,7 @@ export { GasSponsor, createGasSponsor } from './core/GasSponsor.js';
 // Session Key Management (Issue #14)
 export { SessionManager } from './sessions/index.js';
 export { EVMHubClientAdapter } from './chains/evm/index.js';
-export { 
+export {
     generateSecp256k1KeyPair,
     computeSessionKeyHash,
     signWithSessionKey,
@@ -167,7 +166,7 @@ export {
     DEFAULT_SESSION_DURATION,
     DEFAULT_REFRESH_BUFFER,
 } from './sessions/crypto.js';
-export { 
+export {
     IndexedDBSessionStorage,
     LocalStorageSessionStorage,
     createSessionStorage,
@@ -178,19 +177,19 @@ export {
 // ============================================================================
 
 export {
-  VERIDEX_ERRORS,
-  ERROR_RANGES,
-  ERROR_MESSAGES,
-  isCoreError,
-  isQueryExecutionError,
-  isAbiError,
-  isQueryParsingError,
-  isQueryError,
-  getErrorCategory,
-  getErrorMessage,
-  parseVeridexError,
-  isRetryableError,
-  getSuggestedAction,
+    VERIDEX_ERRORS,
+    ERROR_RANGES,
+    ERROR_MESSAGES,
+    isCoreError,
+    isQueryExecutionError,
+    isAbiError,
+    isQueryParsingError,
+    isQueryError,
+    getErrorCategory,
+    getErrorMessage,
+    parseVeridexError,
+    isRetryableError,
+    getSuggestedAction,
 } from './constants/errors.js';
 
 export type { VeridexErrorCode } from './constants/errors.js';
@@ -307,18 +306,18 @@ export type {
 export type { ChainAddressConfig } from './core/WalletManager.js';
 
 // Re-export Balance types
-export type { 
-    TokenBalance, 
-    PortfolioBalance, 
-    BalanceManagerConfig 
+export type {
+    TokenBalance,
+    PortfolioBalance,
+    BalanceManagerConfig
 } from './core/BalanceManager.js';
 
 // Re-export Transaction Tracker types
-export type { 
-    TransactionStatus, 
-    TransactionState, 
-    TransactionCallback, 
-    TrackerConfig 
+export type {
+    TransactionStatus,
+    TransactionState,
+    TransactionCallback,
+    TrackerConfig
 } from './core/TransactionTracker.js';
 
 // Re-export Chain Detector types
