@@ -22,7 +22,7 @@ import { SolanaClient } from './chains/solana/SolanaClient.js';
 import { AptosClient } from './chains/aptos/AptosClient.js';
 import { SuiClient } from './chains/sui/SuiClient.js';
 import { StarknetClient } from './chains/starknet/StarknetClient.js';
-import { 
+import {
   CHAIN_PRESETS,
   getChainConfig,
   getChainPreset,
@@ -45,34 +45,34 @@ export interface SimpleSDKConfig {
    * @default 'testnet'
    */
   network?: NetworkType;
-  
+
   /**
    * Custom RPC URL (optional - defaults to public endpoints)
    */
   rpcUrl?: string;
-  
+
   /**
    * Relayer URL for gasless transactions (optional)
    */
   relayerUrl?: string;
-  
+
   /**
    * Relayer API key (optional)
    */
   relayerApiKey?: string;
-  
+
   /**
    * Sponsor private key for gasless vault creation (optional)
    * If not provided, users pay their own gas
    */
   sponsorPrivateKey?: string;
-  
+
   /**
    * Integrator sponsor key (optional)
    * Allows platforms to pay for their users' transactions
    */
   integratorSponsorKey?: string;
-  
+
   /**
    * Additional RPC URLs for multi-chain operations
    * Maps chain name to RPC URL
@@ -88,25 +88,25 @@ export interface SessionConfig {
    * Chain to use for sessions
    */
   chain: ChainName;
-  
+
   /**
    * Network to connect to
    * @default 'testnet'
    */
   network?: NetworkType;
-  
+
   /**
    * Session duration in seconds
    * @default 3600 (1 hour)
    */
   duration?: number;
-  
+
   /**
    * Maximum value per transaction
    * @default BigInt(1e18) (1 token)
    */
   maxValue?: bigint;
-  
+
   /**
    * Require user verification for session creation
    * @default true
@@ -136,7 +136,7 @@ function createChainClient(
     }
     return value;
   };
-  
+
   switch (preset.type) {
     case 'evm':
       return new EVMClient({
@@ -151,7 +151,7 @@ function createChainClient(
         name: config.name,
         explorerUrl: config.explorerUrl,
       });
-      
+
     case 'solana':
       return new SolanaClient({
         rpcUrl,
@@ -161,7 +161,7 @@ function createChainClient(
         wormholeChainId: config.wormholeChainId,
         network: network === 'testnet' ? 'devnet' : 'mainnet',
       });
-      
+
     case 'aptos':
       return new AptosClient({
         rpcUrl,
@@ -171,7 +171,7 @@ function createChainClient(
         wormholeChainId: config.wormholeChainId,
         network: network,
       });
-      
+
     case 'sui':
       return new SuiClient({
         rpcUrl,
@@ -180,7 +180,7 @@ function createChainClient(
         wormholeChainId: config.wormholeChainId,
         network: network,
       });
-      
+
     case 'starknet':
       return new StarknetClient({
         rpcUrl,
@@ -189,11 +189,11 @@ function createChainClient(
         wormholeChainId: config.wormholeChainId,
         network: network === 'testnet' ? 'sepolia' : 'mainnet',
       });
-      
+
     case 'near':
     case 'cosmos':
       throw new Error(`Chain type "${preset.type}" is not yet supported. Coming soon!`);
-      
+
     default:
       throw new Error(`Unknown chain type: ${preset.type}`);
   }
@@ -225,7 +225,7 @@ function createChainClient(
  * 
  * // With relayer for gasless transactions
  * const gaslessSdk = await createSDK('base', {
- *   relayerUrl: 'https://relayer.veridex.io',
+ *   relayerUrl: 'https://relayer.veridex.network',
  *   relayerApiKey: 'your-api-key',
  * });
  * ```
@@ -235,7 +235,7 @@ export function createSDK(
   config: SimpleSDKConfig = {}
 ): VeridexSDK {
   const network = config.network ?? 'testnet';
-  
+
   // Validate chain exists
   if (!CHAIN_PRESETS[chain]) {
     const supportedChains = Object.keys(CHAIN_PRESETS).join(', ');
@@ -243,10 +243,10 @@ export function createSDK(
       `Unknown chain: "${chain}". Supported chains: ${supportedChains}`
     );
   }
-  
+
   // Create chain client
   const chainClient = createChainClient(chain, network, config.rpcUrl);
-  
+
   // Build RPC URLs map for multi-chain operations
   const chainRpcUrls: Record<number, string> = {};
   if (config.rpcUrls) {
@@ -257,7 +257,7 @@ export function createSDK(
       }
     }
   }
-  
+
   // Create SDK
   return new VeridexSDK({
     chain: chainClient,
@@ -354,7 +354,7 @@ export function createSessionSDK(
       `Consider using a hub chain like "base" for full session capabilities.`
     );
   }
-  
+
   return createSDK(chain, config);
 }
 
@@ -363,8 +363,8 @@ export function createSessionSDK(
 // ============================================================================
 
 export type { ChainName, NetworkType } from './presets.js';
-export { 
-  CHAIN_NAMES, 
+export {
+  CHAIN_NAMES,
   CHAIN_PRESETS,
   getChainConfig,
   getChainPreset,

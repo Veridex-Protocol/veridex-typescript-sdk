@@ -82,7 +82,7 @@ const customSdk = createSDK('base', {
 
 ```typescript
 const sdk = createSDK('base', {
-  relayerUrl: 'https://relayer.veridex.io',
+  relayerUrl: 'https://relayer.veridex.network',
   relayerApiKey: 'your-api-key',
 });
 

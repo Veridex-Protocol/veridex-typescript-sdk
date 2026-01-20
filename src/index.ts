@@ -26,7 +26,7 @@
  * @example With Gasless Transactions
  * ```typescript
  * const sdk = createSDK('base', {
- *   relayerUrl: 'https://relayer.veridex.io',
+ *   relayerUrl: 'https://relayer.veridex.network',
  *   relayerApiKey: 'your-api-key',
  * });
  * ```
@@ -150,7 +150,16 @@ export { GasSponsor, createGasSponsor } from './core/GasSponsor.js';
 
 // Session Key Management (Issue #14)
 export { SessionManager } from './sessions/index.js';
-export { EVMHubClientAdapter } from './chains/evm/index.js';
+export { EVMClient, EVMHubClientAdapter } from './chains/evm/index.js';
+export type { EVMClientConfig } from './chains/evm/index.js';
+export { SolanaClient } from './chains/solana/index.js';
+export type { SolanaClientConfig } from './chains/solana/index.js';
+export { AptosClient } from './chains/aptos/AptosClient.js';
+export type { AptosClientConfig } from './chains/aptos/AptosClient.js';
+export { SuiClient } from './chains/sui/SuiClient.js';
+export type { SuiClientConfig } from './chains/sui/SuiClient.js';
+export { StarknetClient } from './chains/starknet/StarknetClient.js';
+export type { StarknetClientConfig } from './chains/starknet/StarknetClient.js';
 export {
     generateSecp256k1KeyPair,
     computeSessionKeyHash,
