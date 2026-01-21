@@ -60,9 +60,10 @@ export interface BalanceManagerConfig {
  * Default RPC URLs for testnet chains
  */
 const DEFAULT_RPC_URLS: Record<number, string> = {
+    10002: 'https://ethereum-sepolia-rpc.publicnode.com',
+    10003: 'https://sepolia-rollup.arbitrum.io/rpc',
     10004: 'https://sepolia.base.org',
     10005: 'https://sepolia.optimism.io',
-    10003: 'https://sepolia-rollup.arbitrum.io/rpc',
 };
 
 /**
