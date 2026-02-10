@@ -22,6 +22,7 @@ import { SolanaClient } from './chains/solana/SolanaClient.js';
 import { AptosClient } from './chains/aptos/AptosClient.js';
 import { SuiClient } from './chains/sui/SuiClient.js';
 import { StarknetClient } from './chains/starknet/StarknetClient.js';
+import { StacksClient } from './chains/stacks/StacksClient.js';
 import {
   CHAIN_PRESETS,
   getChainConfig,
@@ -188,6 +189,14 @@ function createChainClient(
         bridgeContractAddress: config.contracts.wormholeCoreBridge,
         wormholeChainId: config.wormholeChainId,
         network: network === 'testnet' ? 'sepolia' : 'mainnet',
+      });
+
+    case 'stacks':
+      return new StacksClient({
+        rpcUrl,
+        spokeContractAddress: config.contracts.hub || undefined,
+        wormholeChainId: config.wormholeChainId,
+        network: network,
       });
 
     case 'near':

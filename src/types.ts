@@ -27,6 +27,10 @@ export interface ChainConfig {
     vaultImplementation?: string;
     wormholeCoreBridge: string;
     tokenBridge?: string;
+    /** Wormhole guardian signature verifier (Stacks Phase 2) */
+    wormholeVerifier?: string;
+    /** VAA-authorized vault for cross-chain transfers (Stacks Phase 2) */
+    vaultVaa?: string;
   };
 }
 

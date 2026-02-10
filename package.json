@@ -78,6 +78,11 @@
       "import": "./dist/chains/starknet/index.mjs",
       "require": "./dist/chains/starknet/index.js"
     },
+    "./chains/stacks": {
+      "types": "./dist/chains/stacks/index.d.ts",
+      "import": "./dist/chains/stacks/index.mjs",
+      "require": "./dist/chains/stacks/index.js"
+    },
     "./queries": {
       "types": "./dist/queries/index.d.ts",
       "import": "./dist/queries/index.mjs",
@@ -136,6 +141,7 @@
     "aptos",
     "sui",
     "starknet",
+    "stacks",
     "authentication",
     "gasless",
     "session-keys",

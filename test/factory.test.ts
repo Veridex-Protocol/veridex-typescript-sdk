@@ -116,7 +116,7 @@ describe('createSDK', () => {
             'moonbeam',
         ];
 
-        const nonEvmChains: ChainName[] = ['solana', 'aptos', 'sui', 'starknet'];
+        const nonEvmChains: ChainName[] = ['solana', 'aptos', 'sui', 'starknet', 'stacks'];
 
         it.each(chainsWithHub)('should create SDK for chain with hub: %s', (chain) => {
             const sdk = createSDK(chain);
@@ -362,6 +362,7 @@ describe('getChainPreset', () => {
         expect(getChainPreset('aptos').type).toBe('aptos');
         expect(getChainPreset('sui').type).toBe('sui');
         expect(getChainPreset('starknet').type).toBe('starknet');
+        expect(getChainPreset('stacks').type).toBe('stacks');
     });
 
     it('should throw for unknown chain', () => {

@@ -58,6 +58,9 @@ export { VERIDEX_RP_ID };
 /** Default auth portal URL */
 export const DEFAULT_AUTH_PORTAL_URL = 'https://auth.veridex.network';
 
+/** Default relayer API URL for server-side session tokens */
+export const DEFAULT_RELAYER_URL = 'https://amused-kameko-veridex-demo-37453117.koyeb.app/api/v1';
+
 /** Message types for postMessage communication */
 export const AUTH_MESSAGE_TYPES = {
     AUTH_REQUEST: 'VERIDEX_AUTH_REQUEST',
@@ -75,6 +78,9 @@ export interface CrossOriginAuthConfig {
 
     /** Auth portal URL for popup/redirect flow */
     authPortalUrl?: string;
+
+    /** Relayer API URL for server-side session tokens */
+    relayerUrl?: string;
 
     /** Authentication mode: popup or redirect */
     mode?: 'popup' | 'redirect';
@@ -107,6 +113,19 @@ export interface CrossOriginSession {
 
     /** The credential used */
     credential: PasskeyCredential;
+
+    /** Server-validated session token ID (from relayer) */
+    serverSessionId?: string;
+}
+
+/** Server-side session token returned by the relayer */
+export interface ServerSessionToken {
+    id: string;
+    keyHash: string;
+    appOrigin: string;
+    permissions: string[];
+    expiresAt: number;
+    createdAt: number;
 }
 
 export interface AuthPortalMessage {
@@ -133,6 +152,7 @@ export class CrossOriginAuth {
         this.config = {
             rpId: config.rpId ?? VERIDEX_RP_ID,
             authPortalUrl: config.authPortalUrl ?? DEFAULT_AUTH_PORTAL_URL,
+            relayerUrl: config.relayerUrl ?? DEFAULT_RELAYER_URL,
             mode: config.mode ?? 'popup',
             popupFeatures: config.popupFeatures ?? 'width=500,height=600,left=100,top=100',
             timeout: config.timeout ?? 120000, // 2 minutes
@@ -369,6 +389,107 @@ export class CrossOriginAuth {
      */
     getAuthPortalUrl(): string {
         return this.config.authPortalUrl;
+    }
+
+    // ========================================================================
+    // Server-Side Session Tokens (ADR-0018)
+    // ========================================================================
+
+    /**
+     * Create a server-validated session token via the relayer.
+     * Call this after authenticating (via ROR or auth portal) to get a
+     * server-side session that the relayer can verify on subsequent requests.
+     */
+    async createServerSession(
+        session: CrossOriginSession,
+        options?: {
+            permissions?: string[];
+            expiresInMs?: number;
+        }
+    ): Promise<ServerSessionToken> {
+        const keyHash = session.credential?.keyHash;
+        if (!keyHash) {
+            throw new Error('Session must include credential with keyHash');
+        }
+
+        const response = await fetch(`${this.config.relayerUrl}/session/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                keyHash,
+                appOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+                sessionPublicKey: session.sessionPublicKey || '',
+                permissions: options?.permissions ?? ['read', 'transfer'],
+                expiresInMs: options?.expiresInMs ?? 3600000,
+                signature: session.signature,
+            }),
+        });
+
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(data.error || `Failed to create server session: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.session as ServerSessionToken;
+    }
+
+    /**
+     * Validate an existing server session token.
+     * Returns the session details if valid, null if expired/revoked.
+     */
+    async validateServerSession(sessionId: string): Promise<ServerSessionToken | null> {
+        const response = await fetch(`${this.config.relayerUrl}/session/${encodeURIComponent(sessionId)}`);
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const data = await response.json();
+        if (!data.valid) {
+            return null;
+        }
+
+        return data.session as ServerSessionToken;
+    }
+
+    /**
+     * Revoke a server session token.
+     */
+    async revokeServerSession(sessionId: string): Promise<boolean> {
+        const response = await fetch(`${this.config.relayerUrl}/session/${encodeURIComponent(sessionId)}`, {
+            method: 'DELETE',
+        });
+        return response.ok;
+    }
+
+    /**
+     * Full authentication flow: authenticate + create server session.
+     * Automatically detects ROR support and falls back to auth portal.
+     */
+    async authenticateAndCreateSession(options?: {
+        permissions?: string[];
+        expiresInMs?: number;
+    }): Promise<{ session: CrossOriginSession; serverSession: ServerSessionToken }> {
+        let session: CrossOriginSession;
+
+        if (await this.supportsRelatedOrigins()) {
+            const result = await this.authenticate();
+            session = {
+                address: '',
+                sessionPublicKey: '',
+                expiresAt: Date.now() + (options?.expiresInMs ?? 3600000),
+                signature: result.signature,
+                credential: result.credential,
+            };
+        } else {
+            session = await this.connectWithVeridex();
+        }
+
+        const serverSession = await this.createServerSession(session, options);
+        session.serverSessionId = serverSession.id;
+
+        return { session, serverSession };
     }
 }
 

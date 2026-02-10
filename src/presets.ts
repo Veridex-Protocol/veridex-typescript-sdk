@@ -48,6 +48,7 @@ export const CHAIN_NAMES = {
   APTOS: 'aptos',
   SUI: 'sui',
   STARKNET: 'starknet',
+  STACKS: 'stacks',
   NEAR: 'near',
   SEI: 'sei',
 } as const;
@@ -63,7 +64,7 @@ export interface ChainPreset {
   /** Human-readable chain name */
   displayName: string;
   /** Chain type for client selection */
-  type: 'evm' | 'solana' | 'aptos' | 'sui' | 'starknet' | 'near' | 'cosmos';
+  type: 'evm' | 'solana' | 'aptos' | 'sui' | 'starknet' | 'stacks' | 'near' | 'cosmos';
   /** Whether this chain can be a hub */
   canBeHub: boolean;
   /** Testnet configuration */
@@ -675,6 +676,46 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       wormholeChainId: 50001,
       rpcUrl: 'https://starknet-mainnet.public.blastapi.io/rpc/v0_7',
       explorerUrl: 'https://starkscan.co',
+      isEvm: false,
+      contracts: {
+        // TODO: Deploy mainnet contracts
+        wormholeCoreBridge: '',
+      },
+    },
+  },
+
+  // ────────────────────────────────────────────────────────────────────────
+  // STACKS
+  // ────────────────────────────────────────────────────────────────────────
+  stacks: {
+    displayName: 'Stacks',
+    type: 'stacks',
+    canBeHub: false,
+    testnet: {
+      name: 'Stacks Testnet',
+      chainId: 2147483648, // CAIP-2: stacks:2147483648
+      wormholeChainId: 60, // Official Wormhole chain ID for Stacks
+      rpcUrl: 'https://api.testnet.hiro.so',
+      explorerUrl: 'https://explorer.hiro.so/?chain=testnet',
+      isEvm: false,
+      contracts: {
+        // Spoke contract: identity + session management
+        hub: 'ST1CKNN84MDPCJRQDHDCY34GMRKQ3TASNNDJQDRTN.veridex-spoke',
+        // Vault contract: STX/sBTC custody
+        vaultFactory: 'ST1CKNN84MDPCJRQDHDCY34GMRKQ3TASNNDJQDRTN.veridex-vault',
+        wormholeCoreBridge: '',
+        // Phase 2: Wormhole integration contracts
+        wormholeVerifier: 'ST1CKNN84MDPCJRQDHDCY34GMRKQ3TASNNDJQDRTN.veridex-wormhole-verifier',
+        vaultVaa: 'ST1CKNN84MDPCJRQDHDCY34GMRKQ3TASNNDJQDRTN.veridex-vault-vaa',
+      },
+      hubChainId: 10004, // Base Sepolia
+    },
+    mainnet: {
+      name: 'Stacks',
+      chainId: 1, // CAIP-2: stacks:1
+      wormholeChainId: 60,
+      rpcUrl: 'https://api.hiro.so',
+      explorerUrl: 'https://explorer.hiro.so',
       isEvm: false,
       contracts: {
         // TODO: Deploy mainnet contracts

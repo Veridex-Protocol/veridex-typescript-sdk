@@ -89,11 +89,13 @@ export {
     sendAuthResponse,
     sendAuthError,
     DEFAULT_AUTH_PORTAL_URL,
+    DEFAULT_RELAYER_URL,
     AUTH_MESSAGE_TYPES,
 } from './core/CrossOriginAuth.js';
 export type {
     CrossOriginAuthConfig,
     CrossOriginSession,
+    ServerSessionToken,
     AuthPortalMessage,
 } from './core/CrossOriginAuth.js';
 
@@ -160,6 +162,41 @@ export { SuiClient } from './chains/sui/SuiClient.js';
 export type { SuiClientConfig } from './chains/sui/SuiClient.js';
 export { StarknetClient } from './chains/starknet/StarknetClient.js';
 export type { StarknetClientConfig } from './chains/starknet/StarknetClient.js';
+export { StacksClient, STACKS_ACTION_TYPES } from './chains/stacks/index.js';
+export type { StacksClientConfig } from './chains/stacks/index.js';
+export {
+    compressPublicKey as stacksCompressPublicKey,
+    rsToCompactSignature as stacksRsToCompactSignature,
+    derToCompactSignature as stacksDerToCompactSignature,
+    computeKeyHash as stacksComputeKeyHash,
+    computeKeyHashFromCoords as stacksComputeKeyHashFromCoords,
+    buildRegistrationHash as stacksBuildRegistrationHash,
+    buildSessionRegistrationHash as stacksBuildSessionRegistrationHash,
+    buildRevocationHash as stacksBuildRevocationHash,
+    buildExecuteHash as stacksBuildExecuteHash,
+    buildWithdrawalHash as stacksBuildWithdrawalHash,
+    isValidStacksPrincipal,
+    isValidStandardPrincipal as isValidStacksStandardPrincipal,
+    isValidContractName as isValidStacksContractName,
+    getNetworkFromAddress as getStacksNetworkFromAddress,
+    getContractPrincipal as getStacksContractPrincipal,
+    parseContractPrincipal as parseStacksContractPrincipal,
+    isContractPrincipal as isStacksContractPrincipal,
+    getStacksExplorerTxUrl,
+    getStacksExplorerAddressUrl,
+    buildStxWithdrawalPostConditions,
+    buildStxDepositPostConditions,
+    buildSbtcWithdrawalPostConditions,
+    buildExecutePostConditions as buildStacksExecutePostConditions,
+    validatePostConditions as validateStacksPostConditions,
+} from './chains/stacks/index.js';
+export type {
+    PostConditionComparison,
+    StxPostCondition,
+    FtPostCondition,
+    NftPostCondition,
+    PostCondition as StacksPostCondition,
+} from './chains/stacks/index.js';
 export {
     generateSecp256k1KeyPair,
     computeSessionKeyHash,

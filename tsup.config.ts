@@ -14,6 +14,7 @@ export default defineConfig({
         'chains/aptos/index': 'src/chains/aptos/index.ts',
         'chains/sui/index': 'src/chains/sui/index.ts',
         'chains/starknet/index': 'src/chains/starknet/index.ts',
+        'chains/stacks/index': 'src/chains/stacks/index.ts',
     },
     format: ['cjs', 'esm'],
     dts: {
