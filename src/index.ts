@@ -436,6 +436,7 @@ export {
     OPTIMISM_SEPOLIA_TOKENS,
     ARBITRUM_SEPOLIA_TOKENS,
     ETHEREUM_SEPOLIA_TOKENS,
+    MONAD_TESTNET_TOKENS,
     TOKEN_REGISTRY,
     getTokenList,
     getAllTokens,
@@ -463,6 +464,12 @@ export * from './payload.js';
 export * from './auth/prepareAuth.js';
 export * from './queries/index.js';
 export * from './wormhole.js';
+
+// ============================================================================
+// ERC-8004 Low-Level Utilities
+// ============================================================================
+
+export * from './erc8004/index.js';
 
 // ============================================================================
 // Default Export

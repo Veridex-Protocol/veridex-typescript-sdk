@@ -43,6 +43,9 @@ export const CHAIN_NAMES = {
   CELO: 'celo',
   MOONBEAM: 'moonbeam',
   
+  // EVM L1s (High Performance)
+  MONAD: 'monad',
+  
   // Non-EVM
   SOLANA: 'solana',
   APTOS: 'aptos',
@@ -513,6 +516,43 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       contracts: {
         wormholeCoreBridge: '0xC8e2b0cD52Cf01b0Ce87d389Daa3d414d4cE29f3',
         tokenBridge: '0xb1731c586ca89a23809861c6103F0b96B3F57D92',
+      },
+    },
+  },
+
+  // ────────────────────────────────────────────────────────────────────────
+  // MONAD - High-Performance L1 with EIP-7951 P256 + Agent Gateway
+  // ────────────────────────────────────────────────────────────────────────
+  monad: {
+    displayName: 'Monad',
+    type: 'evm',
+    canBeHub: true, // Has native P-256 precompile (EIP-7951)
+    testnet: {
+      name: 'Monad Testnet',
+      chainId: 10143,
+      wormholeChainId: 10048,
+      rpcUrl: 'https://testnet-rpc.monad.xyz',
+      explorerUrl: 'https://testnet.monadvision.com',
+      isEvm: true,
+      contracts: {
+        vaultFactory: '0x07F608AFf6d63b68029488b726d895c4Bb593038',
+        vaultImplementation: '0xD66153fccFB6731fB6c4944FbD607ba86A76a1f6',
+        wormholeCoreBridge: '0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd',
+        // Agent Gateway contracts
+        serviceDirectory: '0x0D2B4193e78107678a5aC29d795e0EcD361aE3A7',
+      },
+      hubChainId: 10004, // Base Sepolia
+    },
+    mainnet: {
+      name: 'Monad',
+      chainId: 143,
+      wormholeChainId: 0, // TBD
+      rpcUrl: 'https://rpc.monad.xyz',
+      explorerUrl: 'https://monadscan.com',
+      isEvm: true,
+      contracts: {
+        wormholeCoreBridge: '0x194B123c5E96B9b2E49763619985790Dc241CAC0',
+        tokenBridge: '0x0B2719cdA2F10595369e6673ceA3Ee2EDFa13BA7',
       },
     },
   },

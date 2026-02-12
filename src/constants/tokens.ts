@@ -193,6 +193,45 @@ export const ETHEREUM_SEPOLIA_TOKENS: ChainTokenList = {
 };
 
 // ============================================================================
+// Monad Testnet (Spoke Chain) - Wormhole Chain ID 10048
+// ============================================================================
+
+export const MONAD_TESTNET_TOKENS: ChainTokenList = {
+    wormholeChainId: 10048,
+    chainName: 'Monad Testnet',
+    nativeToken: {
+        symbol: 'MON',
+        name: 'Monad',
+        decimals: 18,
+        address: NATIVE_TOKEN_ADDRESS,
+        isNative: true,
+    },
+    tokens: [
+        {
+            symbol: 'USDC',
+            name: 'USD Coin',
+            decimals: 6,
+            address: '0x754704Bc059F8C67012fEd69BC8A327a5aafb603',
+            isNative: false,
+        },
+        {
+            symbol: 'AUSD',
+            name: 'Agora Dollar',
+            decimals: 18,
+            address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a',
+            isNative: false,
+        },
+        {
+            symbol: 'WMON',
+            name: 'Wrapped MON',
+            decimals: 18,
+            address: '0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A',
+            isNative: false,
+        },
+    ],
+};
+
+// ============================================================================
 // Token Registry
 // ============================================================================
 
@@ -204,6 +243,7 @@ export const TOKEN_REGISTRY: Record<number, ChainTokenList> = {
     10005: OPTIMISM_SEPOLIA_TOKENS,
     10003: ARBITRUM_SEPOLIA_TOKENS,
     10002: ETHEREUM_SEPOLIA_TOKENS,
+    10048: MONAD_TESTNET_TOKENS,
 };
 
 // ============================================================================

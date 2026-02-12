@@ -98,6 +98,8 @@ export interface ChainConfig {
         wormholeVerifier?: string;
         /** VAA-authorized vault for cross-chain transfers (Stacks Phase 2) */
         vaultVaa?: string;
+        /** Agent marketplace contract (Monad Agent Gateway) */
+        serviceDirectory?: string;
     };
 }
 
