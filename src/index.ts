@@ -460,10 +460,13 @@ export * from './constants.js';
 export * from './utils.js';
 export * from './payload.js';
 
-// Client-first authentication preparation (Wormhole Queries)
-export * from './auth/prepareAuth.js';
-export * from './queries/index.js';
+// Wormhole utilities (VAA parsing, fetching, encoding — no heavy class imports)
 export * from './wormhole.js';
+
+// NOTE: queries (hubState, portfolio) and auth/prepareAuth are NOT re-exported here
+// because they import class values from @wormhole-foundation/wormhole-query-sdk
+// which cause TDZ errors in client-side bundles (Next.js "use client").
+// Use the subpath import instead:  import { ... } from '@veridex/sdk/queries'
 
 // ============================================================================
 // ERC-8004 Low-Level Utilities

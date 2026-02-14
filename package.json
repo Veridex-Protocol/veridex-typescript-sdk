@@ -87,6 +87,11 @@
       "types": "./dist/queries/index.d.ts",
       "import": "./dist/queries/index.mjs",
       "require": "./dist/queries/index.js"
+    },
+    "./auth": {
+      "types": "./dist/auth/prepareAuth.d.ts",
+      "import": "./dist/auth/prepareAuth.mjs",
+      "require": "./dist/auth/prepareAuth.js"
     }
   },
   "scripts": {

@@ -9,6 +9,7 @@ export default defineConfig({
         'payload': 'src/payload.ts',
         'utils': 'src/utils.ts',
         'queries/index': 'src/queries/index.ts',
+        'auth/prepareAuth': 'src/auth/prepareAuth.ts',
         'chains/evm/index': 'src/chains/evm/index.ts',
         'chains/solana/index': 'src/chains/solana/index.ts',
         'chains/aptos/index': 'src/chains/aptos/index.ts',
