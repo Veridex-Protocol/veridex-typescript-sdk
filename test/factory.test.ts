@@ -37,6 +37,7 @@ import {
     type NetworkType,
 } from '../src/factory.js';
 import { VeridexSDK } from '../src/core/VeridexSDK.js';
+import { setFeatureFlags, resetFeatureFlags } from '../src/featureFlags.js';
 
 // ============================================================================
 // createSDK Factory Tests
@@ -399,7 +400,12 @@ describe('getSupportedChains', () => {
 });
 
 describe('getHubChains', () => {
-    it('should return only hub-capable chains', () => {
+    afterEach(() => {
+        resetFeatureFlags();
+    });
+
+    it('should return only hub-capable chains when multi-hub enabled', () => {
+        setFeatureFlags({ multiHub: true });
         const hubChains = getHubChains();
 
         // All returned chains should have canBeHub = true
@@ -408,13 +414,19 @@ describe('getHubChains', () => {
         }
     });
 
+    it('should return only base when multi-hub is disabled (default)', () => {
+        const hubChains = getHubChains();
+        expect(hubChains).toEqual(['base']);
+    });
+
     it('should include Base as hub', () => {
         const hubChains = getHubChains();
 
         expect(hubChains).toContain('base');
     });
 
-    it('should include Optimism as hub', () => {
+    it('should include Optimism as hub when multi-hub is enabled', () => {
+        setFeatureFlags({ multiHub: true });
         const hubChains = getHubChains();
 
         expect(hubChains).toContain('optimism');

@@ -27,9 +27,11 @@ import {
   CHAIN_PRESETS,
   getChainConfig,
   getChainPreset,
+  isHubChain,
   type ChainName,
   type NetworkType,
 } from './presets.js';
+import { getEffectivePrimaryHub, isMultiHubEnabled } from './featureFlags.js';
 import type { ChainClient } from './core/types.js';
 
 // ============================================================================
@@ -280,10 +282,13 @@ export function createSDK(
 }
 
 /**
- * Create SDK for the default hub chain (Base)
+ * Create SDK for the default hub chain.
+ * 
+ * When multi-hub is disabled, always creates SDK for Base.
+ * When enabled, uses the configured primary hub chain.
  * 
  * @param config - Optional configuration
- * @returns SDK configured for Base hub chain
+ * @returns SDK configured for the primary hub chain
  * 
  * @example
  * ```typescript
@@ -292,7 +297,8 @@ export function createSDK(
  * ```
  */
 export function createHubSDK(config: SimpleSDKConfig = {}): VeridexSDK {
-  return createSDK('base', config);
+  const hubChain = getEffectivePrimaryHub();
+  return createSDK(hubChain, config);
 }
 
 /**
@@ -356,11 +362,12 @@ export function createSessionSDK(
   config: SimpleSDKConfig = {}
 ): VeridexSDK {
   // Sessions require hub chain with session key support
-  const preset = getChainPreset(chain);
-  if (!preset.canBeHub) {
+  if (!isHubChain(chain)) {
+    const hubChain = getEffectivePrimaryHub();
     console.warn(
-      `Chain "${chain}" may have limited session support. ` +
-      `Consider using a hub chain like "base" for full session capabilities.`
+      `Chain "${chain}" is not an active hub chain. ` +
+      `Consider using "${hubChain}" for full session capabilities.` +
+      (isMultiHubEnabled() ? '' : ' Enable multi-hub to use other hub-capable chains.')
     );
   }
 
@@ -380,5 +387,16 @@ export {
   getSupportedChains,
   getHubChains,
   isChainSupported,
+  isHubChain,
   getDefaultHub,
 } from './presets.js';
+
+// Feature Flags
+export {
+  getFeatureFlags,
+  setFeatureFlags,
+  resetFeatureFlags,
+  isMultiHubEnabled,
+  getEffectivePrimaryHub,
+} from './featureFlags.js';
+export type { FeatureFlags } from './featureFlags.js';

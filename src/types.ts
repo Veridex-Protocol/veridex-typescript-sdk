@@ -33,6 +33,16 @@ export interface ChainConfig {
     vaultVaa?: string;
     /** Agent marketplace contract (Monad Agent Gateway) */
     serviceDirectory?: string;
+    /** ACP-204 P-256 verifier wrapper (Avalanche) */
+    p256Verifier?: string;
+    /** ICM Spoke for cross-L1 session bridging (Avalanche Teleporter) */
+    icmSpoke?: string;
+    /** Chainlink AVAX/USD price feed (Avalanche) */
+    chainlinkAvaxUsd?: string;
+    /** Chainlink USDC/USD price feed (Avalanche) */
+    chainlinkUsdcUsd?: string;
+    /** Chainlink USDT/USD price feed (Avalanche) */
+    chainlinkUsdtUsd?: string;
   };
 }
 

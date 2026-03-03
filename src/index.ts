@@ -63,7 +63,15 @@ export {
     getSupportedChains,
     getHubChains,
     isChainSupported,
+    isHubChain,
     getDefaultHub,
+
+    // Feature Flags
+    getFeatureFlags,
+    setFeatureFlags,
+    resetFeatureFlags,
+    isMultiHubEnabled,
+    getEffectivePrimaryHub,
 } from './factory.js';
 
 export type {
@@ -72,6 +80,7 @@ export type {
     SessionConfig as SimpleSessionConfig,
     ChainName,
     NetworkType,
+    FeatureFlags,
 } from './factory.js';
 
 // ============================================================================

@@ -5,6 +5,7 @@ import { PasskeyManager } from '../core/PasskeyManager.js';
 import { MAINNET_CHAINS, TESTNET_CHAINS } from '../constants.js';
 import { buildGaslessChallenge, encodeBridgeAction, encodeExecuteAction, encodeTransferAction } from '../payload.js';
 import { queryHubState } from '../queries/hubState.js';
+import { getDefaultHub } from '../presets.js';
 
 export type AuthenticateAndPrepareParams = {
   credential: PasskeyCredential;
@@ -35,17 +36,15 @@ function resolveNetwork(): 'testnet' | 'mainnet' {
 }
 
 function getHubChainId(network: 'testnet' | 'mainnet'): number {
-  return network === 'testnet' ? TESTNET_CHAINS.baseSepolia.wormholeChainId : MAINNET_CHAINS.base.wormholeChainId;
+  return getDefaultHub(network).wormholeChainId;
 }
 
 function getHubRpcUrl(network: 'testnet' | 'mainnet'): string {
-  return network === 'testnet' ? TESTNET_CHAINS.baseSepolia.rpcUrl : MAINNET_CHAINS.base.rpcUrl;
+  return getDefaultHub(network).rpcUrl;
 }
 
 function getHubAddress(network: 'testnet' | 'mainnet'): string {
-  const hub = network === 'testnet'
-    ? TESTNET_CHAINS.baseSepolia.contracts.hub
-    : (MAINNET_CHAINS.base.contracts as any)?.hub;
+  const hub = getDefaultHub(network).contracts.hub;
   if (!hub) {
     throw new Error('Hub address missing in SDK constants');
   }

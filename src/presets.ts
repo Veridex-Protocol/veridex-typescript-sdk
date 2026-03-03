@@ -17,6 +17,7 @@
  */
 
 import type { ChainConfig } from './types.js';
+import { isMultiHubEnabled, getEffectivePrimaryHub } from './featureFlags.js';
 
 // ============================================================================
 // Supported Chain Names
@@ -290,12 +291,12 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
   },
 
   // ────────────────────────────────────────────────────────────────────────
-  // AVALANCHE
+  // AVALANCHE — ACP-204 Native P-256 + ICM Teleporter + Hub-Capable
   // ────────────────────────────────────────────────────────────────────────
   avalanche: {
     displayName: 'Avalanche',
     type: 'evm',
-    canBeHub: false,
+    canBeHub: true, // ACP-204 provides native P-256 at 0x0100 (6,900 gas)
     testnet: {
       name: 'Avalanche Fuji',
       chainId: 43113,
@@ -304,9 +305,23 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://testnet.snowtrace.io',
       isEvm: true,
       contracts: {
+        // Veridex Hub (deployed via deploy-avalanche.ts)
+        hub: '', // TBD_AFTER_DEPLOYMENT
+        vaultFactory: '', // TBD_AFTER_DEPLOYMENT
+        vaultImplementation: '', // TBD_AFTER_DEPLOYMENT
+        // Wormhole bridges (canonical Fuji addresses)
         wormholeCoreBridge: '0x7bbcE28e64B3F8b84d876Ab298393c38ad7aac4C',
         tokenBridge: '0x61E44E506Ca5659E6c0bba9b678586fA2d729756',
+        // Avalanche-specific: ACP-204 P-256 verifier wrapper
+        p256Verifier: '', // TBD_AFTER_DEPLOYMENT
+        // Avalanche-specific: ICM Spoke for cross-L1 session bridging
+        icmSpoke: '', // TBD_AFTER_DEPLOYMENT
+        // Chainlink price feeds (Fuji testnet)
+        chainlinkAvaxUsd: '0x5498BB86BC934c8D34FDA08E81D444153d0D06aD',
+        chainlinkUsdcUsd: '0x7898AcCC83587C3C55116c5230C17a6Cd9C71bad',
+        chainlinkUsdtUsd: '0x7898AcCC83587C3C55116c5230C17a6Cd9C71bad',
       },
+      hubChainId: 10004, // Base Sepolia (primary Hub)
     },
     mainnet: {
       name: 'Avalanche',
@@ -318,6 +333,10 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       contracts: {
         wormholeCoreBridge: '0x54a8e5f9c4CbA08F9943965859F6c34eAF03E26c',
         tokenBridge: '0x0e082F06FF657D94310cB8cE8B0D9a04541d8052',
+        // Chainlink price feeds (Avalanche mainnet)
+        chainlinkAvaxUsd: '0x0A77230d17318075983913bC2145DB16C7366156',
+        chainlinkUsdcUsd: '0xF096872672F44d6EBA71458D74fe67F9a77a23B9',
+        chainlinkUsdtUsd: '0xEBE676ee90Fe1112671f19b6B7459bC678B67e8a',
       },
     },
   },
@@ -839,9 +858,16 @@ export function getSupportedChains(): ChainName[] {
 }
 
 /**
- * Get hub-capable chains
+ * Get hub-capable chains.
+ * 
+ * When multi-hub feature flag is disabled, returns only the primary hub chain ('base').
+ * When enabled, returns all chains with canBeHub: true.
  */
 export function getHubChains(): ChainName[] {
+  if (!isMultiHubEnabled()) {
+    const primary = getEffectivePrimaryHub();
+    return [primary];
+  }
   return Object.entries(CHAIN_PRESETS)
     .filter(([_, preset]) => preset.canBeHub)
     .map(([name]) => name as ChainName);
@@ -855,8 +881,26 @@ export function isChainSupported(chain: string): chain is ChainName {
 }
 
 /**
- * Get default hub chain
+ * Check if a specific chain is currently acting as a hub.
+ * 
+ * When multi-hub is disabled, only the primary hub ('base') returns true.
+ * When enabled, any chain with canBeHub: true returns true.
+ */
+export function isHubChain(chain: ChainName): boolean {
+  if (!isMultiHubEnabled()) {
+    return chain === getEffectivePrimaryHub();
+  }
+  const preset = CHAIN_PRESETS[chain];
+  return preset?.canBeHub ?? false;
+}
+
+/**
+ * Get default hub chain.
+ * 
+ * Returns the effective primary hub's config. When multi-hub is disabled,
+ * this always returns Base. When enabled, it returns the configured primary hub.
  */
 export function getDefaultHub(network: NetworkType = 'testnet'): ChainConfig {
-  return CHAIN_PRESETS.base[network];
+  const primary = getEffectivePrimaryHub();
+  return CHAIN_PRESETS[primary][network];
 }

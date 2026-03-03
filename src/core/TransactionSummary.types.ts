@@ -173,16 +173,16 @@ export type ActionDetails = TransferDetails | BridgeDetails | ExecuteDetails | C
 export interface TransactionSummary {
   /** Action type for display */
   action: ActionDisplayType;
-  
+
   /** Human-readable title (e.g., "Send ETH", "Bridge USDC") */
   title: string;
-  
+
   /** Human-readable description */
   description: string;
 
   /** Action-specific details */
   details: TransferDetails | BridgeDetails | ExecuteDetails | ConfigDetails | null;
-  
+
   /** Source vault information */
   vault: {
     address: string;
@@ -206,7 +206,7 @@ export interface TransactionSummary {
 
   /** Risk warnings */
   warnings: RiskWarning[];
-  
+
   /** Raw technical details for advanced users */
   raw: {
     actionType: number;
@@ -287,6 +287,9 @@ export const CHAIN_DISPLAY_INFO: Record<number, Omit<ChainDisplay, 'id'>> = {
   10004: { name: 'Base Sepolia', isTestnet: true },
   10005: { name: 'Optimism Sepolia', isTestnet: true },
   50001: { name: 'Starknet Sepolia', isTestnet: true },
+  // Note: Avalanche Fuji also uses Wormhole chain ID 6 — same as mainnet.
+  // The isTestnet flag on mainnet entry (6) is set to false; frontends should
+  // detect testnet via EVM chainId (43113 vs 43114) rather than Wormhole chain ID.
 };
 
 /**

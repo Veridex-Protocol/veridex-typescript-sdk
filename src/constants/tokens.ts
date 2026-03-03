@@ -232,6 +232,45 @@ export const MONAD_TESTNET_TOKENS: ChainTokenList = {
 };
 
 // ============================================================================
+// Avalanche Fuji (Spoke/Hub Chain) - Wormhole Chain ID 6
+// ============================================================================
+
+export const AVALANCHE_FUJI_TOKENS: ChainTokenList = {
+    wormholeChainId: 6,
+    chainName: 'Avalanche Fuji',
+    nativeToken: {
+        symbol: 'AVAX',
+        name: 'Avalanche',
+        address: NATIVE_TOKEN_ADDRESS,
+        decimals: 18,
+        isNative: true,
+    },
+    tokens: [
+        {
+            symbol: 'USDC',
+            name: 'USD Coin (Test)',
+            address: '0x5425890298aed601595a70AB815c96711a31Bc65', // Circle USDC Fuji
+            decimals: 6,
+            isNative: false,
+        },
+        {
+            symbol: 'USDT',
+            name: 'Tether USD (Test)',
+            address: '0xAb231A5744C8E6c45481754928cCfFFFd4aa0732', // USDT Fuji
+            decimals: 6,
+            isNative: false,
+        },
+        {
+            symbol: 'WAVAX',
+            name: 'Wrapped AVAX',
+            address: '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', // WAVAX Fuji
+            decimals: 18,
+            isNative: false,
+        },
+    ],
+};
+
+// ============================================================================
 // Token Registry
 // ============================================================================
 
@@ -244,6 +283,7 @@ export const TOKEN_REGISTRY: Record<number, ChainTokenList> = {
     10003: ARBITRUM_SEPOLIA_TOKENS,
     10002: ETHEREUM_SEPOLIA_TOKENS,
     10048: MONAD_TESTNET_TOKENS,
+    6: AVALANCHE_FUJI_TOKENS,
 };
 
 // ============================================================================
@@ -287,8 +327,8 @@ export function getTokenByAddress(wormholeChainId: number, address: string): Tok
  * Check if an address is the native token
  */
 export function isNativeToken(address: string): boolean {
-    return address.toLowerCase() === NATIVE_TOKEN_ADDRESS || 
-           address === EVM_ZERO_ADDRESS;
+    return address.toLowerCase() === NATIVE_TOKEN_ADDRESS ||
+        address === EVM_ZERO_ADDRESS;
 }
 
 /**
