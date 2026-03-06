@@ -18,6 +18,7 @@
 
 import { VeridexSDK } from './core/VeridexSDK.js';
 import { EVMClient } from './chains/evm/EVMClient.js';
+import { AvalancheClient } from './chains/avalanche/AvalancheClient.js';
 import { SolanaClient } from './chains/solana/SolanaClient.js';
 import { AptosClient } from './chains/aptos/AptosClient.js';
 import { SuiClient } from './chains/sui/SuiClient.js';
@@ -139,6 +140,27 @@ function createChainClient(
     }
     return value;
   };
+
+  // Avalanche gets its own client with ACP-204 + ICM + Chainlink support
+  if ((chain as string) === 'avalanche') {
+    return new AvalancheClient({
+      chainId: config.chainId,
+      wormholeChainId: config.wormholeChainId,
+      rpcUrl,
+      hubContractAddress: config.contracts.hub || '0x0000000000000000000000000000000000000000',
+      wormholeCoreBridge: config.contracts.wormholeCoreBridge || '0x0000000000000000000000000000000000000000',
+      vaultFactory: config.contracts.vaultFactory,
+      vaultImplementation: config.contracts.vaultImplementation,
+      tokenBridge: config.contracts.tokenBridge,
+      name: config.name,
+      explorerUrl: config.explorerUrl,
+      p256VerifierAddress: (config.contracts as any).p256Verifier,
+      icmSpokeAddress: (config.contracts as any).icmSpoke,
+      chainlinkAvaxUsdFeed: (config.contracts as any).chainlinkAvaxUsd,
+      chainlinkUsdcUsdFeed: (config.contracts as any).chainlinkUsdcUsd,
+      chainlinkUsdtUsdFeed: (config.contracts as any).chainlinkUsdtUsd,
+    });
+  }
 
   switch (preset.type) {
     case 'evm':

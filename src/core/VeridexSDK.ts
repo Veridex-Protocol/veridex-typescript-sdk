@@ -19,8 +19,9 @@ import type { TransactionSummary } from './TransactionSummary.types.js';
 import { SpendingLimitsManager } from './SpendingLimitsManager.js';
 import type { SpendingLimits, FormattedSpendingLimits, LimitCheckResult } from './SpendingLimits.types.js';
 import { ethers } from 'ethers';
-import { authenticateAndPrepare } from '../auth/prepareAuth.js';
-import { queryPortfolio } from '../queries/portfolio.js';
+// NOTE: authenticateAndPrepare and queryPortfolio are loaded via dynamic import()
+// to avoid pulling @wormhole-foundation/wormhole-query-sdk into the static
+// module graph, which causes a TDZ crash in browser/SSR bundles.
 import { 
     GasSponsor, 
     type SponsoredVaultResult, 
@@ -1125,6 +1126,7 @@ export class VeridexSDK {
         // - fetch Guardian-attested nonce via Wormhole Queries when possible
         // - fall back to hub RPC nonce lookup
         // - prompt user to sign once
+        const { authenticateAndPrepare } = await import('../auth/prepareAuth.js');
         const prepared = await authenticateAndPrepare(
             {
                 credential,
@@ -1218,6 +1220,7 @@ export class VeridexSDK {
                     .filter((t) => !isNativeToken(t.address))
                     .map((t) => t.address);
 
+                const { queryPortfolio } = await import('../queries/portfolio.js');
                 const result = await queryPortfolio(credential.keyHash, this.queryApiKey, {
                     network: this.testnet ? 'testnet' : 'mainnet',
                     vaultAddresses: { [wormholeChainId]: vaultAddress },
@@ -1599,6 +1602,7 @@ export class VeridexSDK {
 
                 const rpcUrl = this.chainRpcUrls?.[wormholeChainId] ?? chainConfig.rpcUrl;
                 
+                const { queryPortfolio } = await import('../queries/portfolio.js');
                 const result = await queryPortfolio(credential.keyHash, this.queryApiKey, {
                     network: this.testnet ? 'testnet' : 'mainnet',
                     vaultAddresses: { [wormholeChainId]: vaultAddress },

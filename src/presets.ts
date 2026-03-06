@@ -306,16 +306,16 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       isEvm: true,
       contracts: {
         // Veridex Hub (deployed via deploy-avalanche.ts)
-        hub: '', // TBD_AFTER_DEPLOYMENT
-        vaultFactory: '', // TBD_AFTER_DEPLOYMENT
-        vaultImplementation: '', // TBD_AFTER_DEPLOYMENT
+        hub: '', // No Hub on Fuji — Hub is on Base Sepolia
+        vaultFactory: '0xBE231B798821f11c09051851683301F428fe9305',
+        vaultImplementation: '0xcD738492D475D9241bcbe268797f930190d4c43a',
         // Wormhole bridges (canonical Fuji addresses)
         wormholeCoreBridge: '0x7bbcE28e64B3F8b84d876Ab298393c38ad7aac4C',
         tokenBridge: '0x61E44E506Ca5659E6c0bba9b678586fA2d729756',
         // Avalanche-specific: ACP-204 P-256 verifier wrapper
-        p256Verifier: '', // TBD_AFTER_DEPLOYMENT
+        p256Verifier: '0x07F608AFf6d63b68029488b726d895c4Bb593038',
         // Avalanche-specific: ICM Spoke for cross-L1 session bridging
-        icmSpoke: '', // TBD_AFTER_DEPLOYMENT
+        icmSpoke: '0xEA857fD26a976AB8F0aAd5e006b5FEfaF0F30c9B',
         // Chainlink price feeds (Fuji testnet)
         chainlinkAvaxUsd: '0x5498BB86BC934c8D34FDA08E81D444153d0D06aD',
         chainlinkUsdcUsd: '0x7898AcCC83587C3C55116c5230C17a6Cd9C71bad',

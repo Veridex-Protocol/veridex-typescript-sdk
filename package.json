@@ -84,6 +84,16 @@
       "import": "./dist/chains/stacks/index.mjs",
       "require": "./dist/chains/stacks/index.js"
     },
+    "./chains/avalanche": {
+      "types": "./dist/chains/avalanche/index.d.ts",
+      "import": "./dist/chains/avalanche/index.mjs",
+      "require": "./dist/chains/avalanche/index.js"
+    },
+    "./passkey": {
+      "types": "./dist/passkey.d.ts",
+      "import": "./dist/passkey.mjs",
+      "require": "./dist/passkey.js"
+    },
     "./queries": {
       "types": "./dist/queries/index.d.ts",
       "import": "./dist/queries/index.mjs",
