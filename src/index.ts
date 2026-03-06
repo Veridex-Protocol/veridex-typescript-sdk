@@ -114,14 +114,9 @@ export { TransactionTracker, getExplorerUrl, formatTransactionState } from './co
 export { ChainDetector, createChainDetector } from './core/ChainDetector.js';
 
 // Feature Flags
-export {
-  getFeatureFlags,
-  setFeatureFlags,
-  resetFeatureFlags,
-  isMultiHubEnabled,
-  getEffectivePrimaryHub,
-  type FeatureFlags,
-} from './featureFlags.js';
+// Feature flags are exported from factory.ts to avoid circular dependencies
+// but the implementation lives in featureFlags.ts
+
 
 // Issue #26: Human-Readable Transaction Summaries
 export {
