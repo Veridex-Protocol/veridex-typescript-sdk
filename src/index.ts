@@ -113,6 +113,16 @@ export { BalanceManager } from './core/BalanceManager.js';
 export { TransactionTracker, getExplorerUrl, formatTransactionState } from './core/TransactionTracker.js';
 export { ChainDetector, createChainDetector } from './core/ChainDetector.js';
 
+// Feature Flags
+export {
+  getFeatureFlags,
+  setFeatureFlags,
+  resetFeatureFlags,
+  isMultiHubEnabled,
+  getEffectivePrimaryHub,
+  type FeatureFlags,
+} from './featureFlags.js';
+
 // Issue #26: Human-Readable Transaction Summaries
 export {
     TransactionParser,
