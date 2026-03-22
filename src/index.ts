@@ -91,6 +91,75 @@ export { VeridexSDK } from './core/VeridexSDK.js';
 export { PasskeyManager, detectRpId, VERIDEX_RP_ID, supportsRelatedOrigins } from './core/PasskeyManager.js';
 export type { PasskeyCredential, PasskeyManagerConfig, WebAuthnSignature } from './core/PasskeyManager.js';
 
+// Browser Capabilities Detection
+export { detectCapabilities, getAuthStrategy, detectPlatform } from './core/BrowserCapabilities.js';
+export type { BrowserCapabilities, PlatformHint, AuthStrategy } from './core/BrowserCapabilities.js';
+
+// Credential Inventory Management
+export { CredentialManager } from './core/CredentialManager.js';
+export type { ManagedCredential, CredentialMetadata, AddCredentialOptions } from './core/CredentialManager.js';
+export { AccountManager } from './core/AccountManager.js';
+export type { PortabilityOverview, RecoveryOverview, AccountManagerConfig } from './core/AccountManager.js';
+
+// Guardian Recovery Orchestration
+export { RecoveryManager } from './core/RecoveryManager.js';
+export type {
+    RecoveryCapableChainClient,
+    GuardiansResult,
+    RecoveryStatusResult,
+    RecoveryReadiness,
+    SetupGuardiansParams,
+    AddGuardianParams,
+    RemoveGuardianParams,
+    InitiateRecoveryParams,
+    ApproveRecoveryParams,
+    ExecuteRecoveryParams,
+    CancelRecoveryParams,
+    RecoveryManagerConfig,
+} from './core/RecoveryManager.js';
+
+// Threshold Multisig (ADR-0037)
+export {
+    MultisigManager,
+    PROTECTED_ACTION,
+    DEFAULT_PROTECTED_ACTION_MASK,
+    DEFAULT_PROPOSAL_TTL,
+} from './core/MultisigManager.js';
+export type {
+    ProposalState,
+    MultisigPolicy,
+    TransactionProposal,
+    ProposalActionSummary,
+    CreateProposalResult,
+    ApproveProposalResult,
+    ExecuteProposalResult,
+    MultisigCapableChainClient,
+    MultisigManagerConfig,
+    ConfigurePolicyParams,
+    CreateProposalParams,
+    ApproveProposalParams,
+    CancelProposalParams,
+    ExecuteProposalParams,
+} from './core/MultisigManager.js';
+
+// Policy Enforcement & Launch Gates (ADR-0040)
+export {
+    validateNoKeyExtraction,
+    validateChainCapability,
+    validateMetaMaskInteropClaim,
+    validateSessionCreationPolicy,
+    validateFederatedOrigin,
+    buildCapabilityMatrix,
+    PolicyViolationError,
+    CHAIN_CAPABILITIES,
+} from './core/PolicyEnforcement.js';
+export type {
+    ChainCapabilityTier,
+    ChainCapabilities,
+    PlatformCapabilityMatrix,
+    PolicyViolationCode,
+} from './core/PolicyEnforcement.js';
+
 // Cross-Origin Authentication (for third-party apps)
 export {
     CrossOriginAuth,
@@ -109,6 +178,8 @@ export type {
 } from './core/CrossOriginAuth.js';
 
 export { WalletManager } from './core/WalletManager.js';
+export { InjectedWalletAdapter, createInjectedWalletAdapter } from './core/InjectedWalletAdapter.js';
+export type { InjectedWalletAdapterConfig, InjectedWalletConnection, WalletEvent, WalletEventCallback } from './core/InjectedWalletAdapter.js';
 export { BalanceManager } from './core/BalanceManager.js';
 export { TransactionTracker, getExplorerUrl, formatTransactionState } from './core/TransactionTracker.js';
 export { ChainDetector, createChainDetector } from './core/ChainDetector.js';
@@ -160,6 +231,14 @@ export type {
 // Phase 3: Cross-Chain Exports
 export { CrossChainManager, crossChainManager } from './core/CrossChainManager.js';
 export { RelayerClient, createRelayerClient } from './core/RelayerClient.js';
+export type {
+    RegisteredAppStatus,
+    RegisteredAppTrustLevel,
+    RegisteredAppSummary,
+    RegisteredAppDetail,
+    RelayerAppSession,
+    CredentialMetadataRecord,
+} from './core/RelayerClient.js';
 
 // Gas Sponsorship (Gasless Vault Creation)
 export { GasSponsor, createGasSponsor } from './core/GasSponsor.js';

@@ -65,6 +65,14 @@ interface HubClient {
      * @returns Promise that resolves when revocation completes
      */
     revokeSession(params: RevokeSessionParams): Promise<void>;
+
+    /**
+     * Revoke all sessions for an identity on the Hub (emergency wipe).
+     * 
+     * @param params WebAuthn-signed revocation covering all sessions.
+     * @returns Number of sessions revoked.
+     */
+    revokeAllSessions?(params: RevokeSessionParams): Promise<number>;
 }
 
 // ============================================================================
@@ -337,6 +345,73 @@ class SessionManager {
                     error
                 );
             
+            this.emit({ type: 'session-error', error: sessionError });
+            throw sessionError;
+        }
+    }
+
+    /**
+     * Revoke **all** sessions for this identity (emergency wipe).
+     *
+     * Requires a WebAuthn biometric prompt.  If the Hub client does not
+     * support batch revocation the method falls back to revoking the
+     * local session only and throws so the caller knows the on-chain
+     * wipe did not happen.
+     */
+    async revokeAllSessions(): Promise<number> {
+        if (!this.hubClient.revokeAllSessions) {
+            // If the current session is active, revoke it individually
+            if (this.currentSession) {
+                await this.revokeSession();
+            }
+            throw new SessionError(
+                'Hub client does not support batch session revocation. Only the local session was revoked.',
+                SessionErrorCode.BATCH_REVOCATION_FAILED,
+            );
+        }
+
+        try {
+            this.log('Revoking ALL sessions...');
+
+            // Build a challenge that is clearly distinct from single-revoke
+            const challenge = ethers.solidityPacked(
+                ['string'],
+                ['revokeAllSessions'],
+            );
+
+            const signature = await this.passkeySign(ethers.getBytes(challenge));
+
+            this.log('Passkey signature obtained, batch revoking on Hub...');
+
+            const revokeParams: RevokeSessionParams = {
+                signature,
+                publicKeyX: this.credential.publicKeyX,
+                publicKeyY: this.credential.publicKeyY,
+                sessionKeyHash: ethers.ZeroHash, // sentinel: revoke all
+                requireUV: true,
+            };
+
+            const count = await this.hubClient.revokeAllSessions(revokeParams);
+
+            // Clear local state
+            await this.storage.clear();
+            if (this.refreshTimer) {
+                clearTimeout(this.refreshTimer);
+                this.refreshTimer = null;
+            }
+            this.currentSession = null;
+
+            this.emit({ type: 'all-sessions-revoked', count });
+            this.log(`All sessions revoked (${count} on-chain)`);
+            return count;
+
+        } catch (error) {
+            if (error instanceof SessionError) throw error;
+            const sessionError = new SessionError(
+                'Failed to revoke all sessions',
+                SessionErrorCode.BATCH_REVOCATION_FAILED,
+                error,
+            );
             this.emit({ type: 'session-error', error: sessionError });
             throw sessionError;
         }

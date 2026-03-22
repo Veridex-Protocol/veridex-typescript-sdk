@@ -601,6 +601,136 @@ export class PasskeyManager {
         }
     }
 
+    // =========================================================================
+    // Backup Passkey & Device Migration (Phase 3)
+    // =========================================================================
+
+    /**
+     * Register a backup passkey for the current identity.
+     *
+     * This creates a new WebAuthn credential on this device/platform that becomes
+     * an additional authorized key for the same Veridex identity. The caller
+     * must submit the returned credential to VeridexHub.addKey() for on-chain registration.
+     *
+     * Use cases:
+     * - "Add this device" flow when signing in on a new machine
+     * - Proactive backup creation on a separate authenticator
+     * - Cross-ecosystem redundancy (iCloud + Google Password Manager)
+     *
+     * @param username - Username for the new credential (typically same as primary)
+     * @param displayName - Display name for the backup (e.g., "MacBook Pro Backup")
+     * @param excludeCredentialIds - Credential IDs to exclude (prevents re-registering same authenticator)
+     * @returns The newly registered backup credential
+     */
+    async registerBackupPasskey(
+        username: string,
+        displayName: string,
+        excludeCredentialIds?: string[]
+    ): Promise<PasskeyCredential> {
+        if (!PasskeyManager.isSupported()) {
+            throw new Error('WebAuthn is not supported in this browser');
+        }
+
+        const challenge = ethers.randomBytes(32);
+        const challengeBase64 = base64URLEncode(challenge);
+
+        // Build exclude list: prevent re-registering on the same authenticator
+        const excludeList = excludeCredentialIds ?? this.getAllStoredCredentials().map(c => c.credentialId);
+
+        const options: PublicKeyCredentialCreationOptionsJSON = {
+            challenge: challengeBase64,
+            rp: {
+                name: this.config.rpName,
+                id: this.config.rpId,
+            },
+            user: {
+                id: base64URLEncode(ethers.toUtf8Bytes(username)),
+                name: username,
+                displayName: displayName,
+            },
+            pubKeyCredParams: [
+                { alg: -7, type: 'public-key' },   // ES256 (P-256)
+                { alg: -257, type: 'public-key' },  // RS256
+                { alg: -8, type: 'public-key' },    // EdDSA
+            ],
+            excludeCredentials: excludeList.map(id => ({
+                id,
+                type: 'public-key' as const,
+                transports: ['internal' as const, 'hybrid' as const],
+            })),
+            authenticatorSelection: {
+                // Allow cross-platform for backup on security keys
+                userVerification: this.config.userVerification,
+                residentKey: 'required',
+                requireResidentKey: true,
+            },
+            timeout: this.config.timeout,
+            attestation: 'none',
+        };
+
+        const response = await startRegistration(options);
+        const publicKey = this.extractPublicKeyFromAttestation(response);
+        const keyHash = computeKeyHash(publicKey.x, publicKey.y);
+
+        const backupCredential: PasskeyCredential = {
+            credentialId: response.id,
+            publicKeyX: publicKey.x,
+            publicKeyY: publicKey.y,
+            keyHash,
+        };
+
+        // Store locally alongside existing credentials
+        this.addCredentialToStorage(backupCredential);
+
+        return backupCredential;
+    }
+
+    /**
+     * Get registration info for backup state from a registration response.
+     *
+     * This extracts the backup eligibility (BE) and backup state (BS) flags
+     * from the authenticator data, which indicate whether the credential
+     * is eligible for cloud sync and whether it is currently synced.
+     *
+     * @param authenticatorData - Hex-encoded authenticator data from registration
+     * @returns Backup flags, or null if not determinable
+     */
+    static parseBackupFlags(authenticatorData: string): {
+        backupEligible: boolean;
+        backupState: boolean;
+    } | null {
+        try {
+            const data = ethers.getBytes(authenticatorData);
+            if (data.length < 37) return null;
+
+            // Flags byte is at offset 32 (after the 32-byte rpIdHash)
+            const flags = data[32];
+
+            // Bit 3 (0x08) = Backup Eligible (BE)
+            // Bit 4 (0x10) = Backup State (BS)
+            return {
+                backupEligible: (flags & 0x08) !== 0,
+                backupState: (flags & 0x10) !== 0,
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Get the number of credentials stored locally.
+     */
+    getStoredCredentialCount(): number {
+        return this.getAllStoredCredentials().length;
+    }
+
+    /**
+     * Get all credential IDs stored locally (for exclude lists).
+     */
+    getStoredCredentialIds(): string[] {
+        return this.getAllStoredCredentials().map(c => c.credentialId);
+    }
+
     private extractPublicKeyFromAttestation(
         response: RegistrationResponseJSON
     ): { x: bigint; y: bigint } {

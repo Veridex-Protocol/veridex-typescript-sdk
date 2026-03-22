@@ -50,6 +50,24 @@ export class EVMHubClientAdapter implements HubClient {
         // Call EVMClient's revokeSession method
         await this.evmClient.revokeSession(params, this.signer);
     }
+
+    /**
+     * Revoke all sessions for an identity on the Hub.
+     *
+     * Currently delegates to the single-revoke path since the Hub contract
+     * does not yet expose a batch-revoke entry point.  Subclasses or future
+     * Hub versions can override this with a true batch call.
+     * 
+     * @param params Revocation parameters with Passkey signature
+     * @returns Number of sessions revoked (always 1 for now)
+     */
+    async revokeAllSessions(params: RevokeSessionParams): Promise<number> {
+        // TODO: Replace with a true batch-revoke Hub call when the contract
+        //       supports it.  For now, revoke the session identified by the
+        //       keyHash (or a sentinel-based wipe if the contract supports it).
+        await this.evmClient.revokeSession(params, this.signer);
+        return 1;
+    }
     
     /**
      * Update the signer (e.g., when switching accounts)

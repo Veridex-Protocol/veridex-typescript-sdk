@@ -103,6 +103,16 @@ const HUB_ABI = [
     'function getGuardians(bytes32 identityKeyHash) view returns (bytes32[] guardians, uint256 threshold, bool isConfigured)',
     'function getRecoveryStatus(bytes32 identityKeyHash) view returns (bool isActive, bytes32 newOwnerKeyHash, uint256 initiatedAt, uint256 approvalCount, uint256 threshold, uint256 canExecuteAt, uint256 expiresAt)',
     'function hasGuardianApproved(bytes32 identityKeyHash, bytes32 guardianKeyHash) view returns (bool hasApproved)',
+    
+    // ADR-0037: Threshold Multisig
+    'function configureTransactionPolicy(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, uint256 threshold, uint256 protectedActionMask, uint256 proposalTtl, bool disableSessions) external',
+    'function createTransactionProposal(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, uint16 targetChain, bytes actionPayload) external returns (bytes32 proposalId)',
+    'function approveTransactionProposal(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 proposalId) external returns (uint256 approvalCount, bool thresholdReached)',
+    'function cancelTransactionProposal(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) auth, uint256 publicKeyX, uint256 publicKeyY, bytes32 proposalId) external',
+    'function executeTransactionProposal(bytes32 proposalId) external payable returns (uint64 sequence)',
+    'function getTransactionPolicy(bytes32 identityKeyHash) view returns (bool enabled, uint256 threshold, uint256 protectedActionMask, uint256 proposalTtl, bool disableSessions)',
+    'function getTransactionProposal(bytes32 proposalId) view returns (bytes32 identityKeyHash, bytes32 proposerKeyHash, uint16 targetChain, uint8 actionType, bytes32 actionHash, uint256 createdAt, uint256 expiresAt, uint256 approvalCount, uint256 requiredThreshold, uint8 state)',
+    'function hasApprovedTransactionProposal(bytes32 proposalId, bytes32 keyHash) view returns (bool)',
 ];
 
 // ============================================================================
@@ -1456,6 +1466,214 @@ export class EVMClient implements ChainClient {
         guardianKeyHash: string
     ): Promise<boolean> {
         return this.hubContract.hasGuardianApproved(identityKeyHash, guardianKeyHash);
+    }
+
+    // ========================================================================
+    // Threshold Multisig (ADR-0037)
+    // ========================================================================
+
+    async configureTransactionPolicy(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        threshold: number,
+        protectedActionMask: number,
+        proposalTtl: number,
+        disableSessions: boolean,
+        signer: unknown,
+    ): Promise<{ receipt: unknown }> {
+        const s = signer as ethers.Signer;
+        const hub = this.hubContract.connect(s) as ethers.Contract;
+        const authTuple = this._toAuthTuple(signature);
+        const tx = await hub.configureTransactionPolicy(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            threshold,
+            protectedActionMask,
+            proposalTtl,
+            disableSessions,
+        );
+        const receipt = await tx.wait();
+        return { receipt };
+    }
+
+    async getTransactionPolicy(identityKeyHash: string): Promise<{
+        enabled: boolean;
+        threshold: number;
+        protectedActionMask: number;
+        proposalTtl: number;
+        disableSessions: boolean;
+    }> {
+        const result = await this.hubContract.getTransactionPolicy(identityKeyHash);
+        return {
+            enabled: result.enabled,
+            threshold: Number(result.threshold),
+            protectedActionMask: Number(result.protectedActionMask),
+            proposalTtl: Number(result.proposalTtl),
+            disableSessions: result.disableSessions,
+        };
+    }
+
+    async createTransactionProposal(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        targetChain: number,
+        actionPayload: string,
+        signer: unknown,
+    ): Promise<{ proposalId: string; receipt: unknown; sequence: bigint }> {
+        const s = signer as ethers.Signer;
+        const hub = this.hubContract.connect(s) as ethers.Contract;
+        const authTuple = this._toAuthTuple(signature);
+        const tx = await hub.createTransactionProposal(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            targetChain,
+            actionPayload,
+        );
+        const receipt = await tx.wait();
+
+        // Extract proposalId from logs
+        let proposalId = ethers.ZeroHash;
+        for (const log of receipt.logs) {
+            try {
+                const parsed = this.hubContract.interface.parseLog({
+                    topics: log.topics as string[],
+                    data: log.data,
+                });
+                if (parsed?.name === 'ProposalCreated') {
+                    proposalId = parsed.args.proposalId;
+                    break;
+                }
+            } catch {
+                // Not our event
+            }
+        }
+
+        return { proposalId, receipt, sequence: 0n };
+    }
+
+    async approveTransactionProposal(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        proposalId: string,
+        signer: unknown,
+    ): Promise<{ receipt: unknown; approvalCount: number; thresholdReached: boolean }> {
+        const s = signer as ethers.Signer;
+        const hub = this.hubContract.connect(s) as ethers.Contract;
+        const authTuple = this._toAuthTuple(signature);
+        const tx = await hub.approveTransactionProposal(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            proposalId,
+        );
+        const receipt = await tx.wait();
+
+        // Extract approval info from logs
+        let approvalCount = 0;
+        let thresholdReached = false;
+        for (const log of receipt.logs) {
+            try {
+                const parsed = this.hubContract.interface.parseLog({
+                    topics: log.topics as string[],
+                    data: log.data,
+                });
+                if (parsed?.name === 'ProposalApproved') {
+                    approvalCount = Number(parsed.args.currentApprovals);
+                    thresholdReached = Number(parsed.args.currentApprovals) >= Number(parsed.args.requiredThreshold);
+                    break;
+                }
+            } catch {
+                // Not our event
+            }
+        }
+
+        return { receipt, approvalCount, thresholdReached };
+    }
+
+    async cancelTransactionProposal(
+        signature: WebAuthnSignature,
+        publicKeyX: bigint,
+        publicKeyY: bigint,
+        proposalId: string,
+        signer: unknown,
+    ): Promise<{ receipt: unknown }> {
+        const s = signer as ethers.Signer;
+        const hub = this.hubContract.connect(s) as ethers.Contract;
+        const authTuple = this._toAuthTuple(signature);
+        const tx = await hub.cancelTransactionProposal(
+            authTuple,
+            publicKeyX,
+            publicKeyY,
+            proposalId,
+        );
+        const receipt = await tx.wait();
+        return { receipt };
+    }
+
+    async executeTransactionProposal(
+        proposalId: string,
+        signer: unknown,
+    ): Promise<{ receipt: unknown; sequence: bigint }> {
+        const s = signer as ethers.Signer;
+        const hub = this.hubContract.connect(s) as ethers.Contract;
+        const fee = await this.hubContract.getMessageFee();
+        const tx = await hub.executeTransactionProposal(proposalId, { value: fee });
+        const receipt = await tx.wait();
+        const sequence = this._extractSequenceFromReceipt(receipt);
+        return { receipt, sequence };
+    }
+
+    async getTransactionProposal(proposalId: string): Promise<{
+        identityKeyHash: string;
+        proposerKeyHash: string;
+        targetChain: number;
+        actionType: number;
+        actionHash: string;
+        createdAt: bigint;
+        expiresAt: bigint;
+        approvalCount: number;
+        requiredThreshold: number;
+        state: number;
+    }> {
+        const result = await this.hubContract.getTransactionProposal(proposalId);
+        return {
+            identityKeyHash: result.identityKeyHash,
+            proposerKeyHash: result.proposerKeyHash,
+            targetChain: Number(result.targetChain),
+            actionType: Number(result.actionType),
+            actionHash: result.actionHash,
+            createdAt: result.createdAt,
+            expiresAt: result.expiresAt,
+            approvalCount: Number(result.approvalCount),
+            requiredThreshold: Number(result.requiredThreshold),
+            state: Number(result.state),
+        };
+    }
+
+    async hasApprovedTransactionProposal(
+        proposalId: string,
+        keyHash: string,
+    ): Promise<boolean> {
+        return this.hubContract.hasApprovedTransactionProposal(proposalId, keyHash);
+    }
+
+    /**
+     * Convert a WebAuthnSignature to the struct tuple expected by the Hub contract
+     */
+    private _toAuthTuple(sig: WebAuthnSignature) {
+        return {
+            authenticatorData: sig.authenticatorData,
+            clientDataJSON: sig.clientDataJSON,
+            challengeIndex: sig.challengeIndex,
+            typeIndex: sig.typeIndex,
+            r: sig.r,
+            s: sig.s,
+        };
     }
 
     /**

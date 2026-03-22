@@ -473,6 +473,65 @@ describe('SessionManager', () => {
             }
         });
     });
+
+    // ========================================================================
+    // Batch Revocation Tests
+    // ========================================================================
+
+    describe('revokeAllSessions', () => {
+        it('should revoke all sessions when hub supports it', async () => {
+            // Add batch revoke support to mock hub
+            let batchRevokeCalled = false;
+            (mockHub as any).revokeAllSessions = vi.fn(async () => {
+                batchRevokeCalled = true;
+                mockHub.registeredSessions.clear();
+                return 3;
+            });
+
+            await sessionManager.createSession();
+            const count = await sessionManager.revokeAllSessions();
+
+            expect(count).toBe(3);
+            expect(batchRevokeCalled).toBe(true);
+            expect(sessionManager.isActive()).toBe(false);
+        });
+
+        it('should emit all-sessions-revoked event', async () => {
+            (mockHub as any).revokeAllSessions = vi.fn(async () => 2);
+
+            const events: any[] = [];
+            sessionManager.on((event: any) => events.push(event));
+
+            await sessionManager.createSession();
+            await sessionManager.revokeAllSessions();
+
+            const revokeEvent = events.find(e => e.type === 'all-sessions-revoked');
+            expect(revokeEvent).toBeDefined();
+            expect(revokeEvent.count).toBe(2);
+        });
+
+        it('should throw BATCH_REVOCATION_FAILED when hub does not support batch revoke', async () => {
+            // Default MockHubClient has no revokeAllSessions
+            await sessionManager.createSession();
+
+            await expect(sessionManager.revokeAllSessions()).rejects.toThrow(SessionError);
+
+            try {
+                // Reset to have an active session again
+                const mgr2 = new SessionManager(
+                    mockCredential,
+                    mockHub,
+                    mockPasskeySign,
+                    sessionConfig,
+                    { defaultSessionConfig: sessionConfig, storageBackend: 'localstorage' }
+                );
+                await mgr2.createSession();
+                await mgr2.revokeAllSessions();
+            } catch (error) {
+                expect((error as SessionError).code).toBe(SessionErrorCode.BATCH_REVOCATION_FAILED);
+            }
+        });
+    });
     
     // ========================================================================
     // Auto-Refresh Tests

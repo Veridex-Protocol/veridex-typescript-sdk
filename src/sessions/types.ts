@@ -114,6 +114,7 @@ export type SessionEvent =
     | { type: 'session-expired'; keyHash: string }
     | { type: 'session-refreshed'; session: SessionKey }
     | { type: 'session-revoked'; keyHash: string }
+    | { type: 'all-sessions-revoked'; count: number }
     | { type: 'session-error'; error: Error };
 
 export type SessionEventCallback = (event: SessionEvent) => void;
@@ -218,4 +219,5 @@ export enum SessionErrorCode {
     INVALID_CONFIG = 'INVALID_CONFIG',
     REGISTRATION_FAILED = 'REGISTRATION_FAILED',
     REVOCATION_FAILED = 'REVOCATION_FAILED',
+    BATCH_REVOCATION_FAILED = 'BATCH_REVOCATION_FAILED',
 }

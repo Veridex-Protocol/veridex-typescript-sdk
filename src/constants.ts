@@ -166,9 +166,9 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.basescan.org',
     isEvm: true,
     contracts: {
-      hub: '0x66D87dE68327f48A099c5B9bE97020Feab9a7c82',
-      vaultFactory: '0xCFaEb5652aa2Ee60b2229dC8895B4159749C7e53',
-      vaultImplementation: '0x0d13367C16c6f0B24eD275CC67C7D9f42878285c',
+      hub: '0x23a39c294891703146c3607e1FEEB5Fe78F7F28d',
+      vaultFactory: '0x31e8dc9428575334739754Ab2bdB0E8b9Dc707FD',
+      vaultImplementation: '0xD65E996CD6d5B01689dc54ad30B51f1D88a100f5',
       wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
       tokenBridge: '0x86F55A04690fd7815A3D802bD587e83eA888B239',
     },
@@ -181,8 +181,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.etherscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0x07F608AFf6d63b68029488b726d895c4Bb593038',
-      vaultImplementation: '0xD66153fccFB6731fB6c4944FbD607ba86A76a1f6',
+      vaultFactory: '0x52a6dc19C11b3B53B434Fc7f6D31F8b62ed18F0a',
+      vaultImplementation: '0xfab72dd1fd3AD79f738B49506f32251B60c95f01',
       wormholeCoreBridge: '0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78',
       tokenBridge: '0xDB5492265f6038831E89f495670FF909aDe94bd9',
     },
@@ -195,8 +195,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia-optimism.etherscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0xA5653d54079ABeCe780F8d9597B2bc4B09fe464A',
-      vaultImplementation: '0x8099b1406485d2255ff89Ce5Ea18520802AFC150',
+      vaultFactory: '0x347feeaBB5655a7a80b56D8D554DA30BE6c28225',
+      vaultImplementation: '0x26C4FD8fC66150ef5964562F7A69271fB0cd02A4',
       wormholeCoreBridge: '0x31377888146f3253211EFEf5c676D41ECe7D58Fe',
       tokenBridge: '0x99737Ec4B815d816c49A385943baf0380e75c0Ac',
     },
@@ -209,8 +209,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.arbiscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0xd36D3D5DB59d78f1E33813490F72DABC15C9B07c',
-      vaultImplementation: '0xB10ACf39eBF17fc33F722cBD955b7aeCB0611bc4',
+      vaultFactory: '0x708eEE22621A64CDF51d98d3e8D97902D7dF52dD',
+      vaultImplementation: '0x9f74Dc14A98E59df7AEC5571a2B9E329153dF5Cd',
       wormholeCoreBridge: '0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35',
       tokenBridge: '0xC7A204bDBFe983FCD8d8E61D02b475D4073fF97e',
     },
@@ -249,7 +249,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://explorer.aptoslabs.com',
     isEvm: false,
     contracts: {
-      hub: '0x0237e04f74b991b5b6030a793779663033f4ff4a1682a9e66c1f41fc1ec3e2a4',
+      hub: '0x2935e5d434c383c8f8b8af3b9596aa78b7238c308b5b0fe2bbd19e248b6f018f',
       wormholeCoreBridge: '0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625',
       tokenBridge: '0x576410486a2da45eee6c949c995670112ddf2fbeedab20350d506328eefc9d4f',
     },
@@ -262,7 +262,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://suiscan.xyz/testnet',
     isEvm: false,
     contracts: {
-      hub: '0x35e99fdbbc1cde7e093da6f9e758ba2c4a077904bd64caee2fa6db5e6c4e9e37',
+      hub: '0x7f6b9a3f9dba7ac6b20d180a9274f525c23a2a9f7e5445218c595c3696c55667',
       wormholeCoreBridge: '0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790',
     },
   },
@@ -275,9 +275,9 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     isEvm: false,
     contracts: {
       // Starknet spoke contract
-      hub: '0x68adcc730ed6c355200d00f763825448497b9cdf7936ca121711e078c88e811',
+      hub: '0x46139177b8a1d7187cf35fbcddca637882a1d6f50d91f048c59d1322eee9ede',
       // Custom bridge contract (NOT Wormhole)
-      wormholeCoreBridge: '0x2c458c1ae64556482b05cc2d3ee5b032ed114d68429dda2062c9849a5a725f8',
+      wormholeCoreBridge: '0x700488242f8f03248b2311edddc394f0408a18c36181446eabd265067809c83',
     },
     // Hub chain ID that Starknet bridge validates (Base Sepolia = 10004)
     hubChainId: 10004,

@@ -17,6 +17,11 @@ import { ChainDetector } from './ChainDetector.js';
 import { TransactionParser } from './TransactionParser.js';
 import type { TransactionSummary } from './TransactionSummary.types.js';
 import { SpendingLimitsManager } from './SpendingLimitsManager.js';
+import { AccountManager } from './AccountManager.js';
+import { RecoveryManager } from './RecoveryManager.js';
+import { MultisigManager } from './MultisigManager.js';
+import { buildCapabilityMatrix } from './PolicyEnforcement.js';
+import type { PlatformCapabilityMatrix } from './PolicyEnforcement.js';
 import type { SpendingLimits, FormattedSpendingLimits, LimitCheckResult } from './SpendingLimits.types.js';
 import { ethers } from 'ethers';
 // NOTE: authenticateAndPrepare and queryPortfolio are loaded via dynamic import()
@@ -65,12 +70,15 @@ const PREPARED_TRANSFER_TTL = 5 * 60 * 1000;
 export class VeridexSDK {
     public readonly passkey: PasskeyManager;
     public readonly wallet: WalletManager;
+    public readonly account: AccountManager;
     public readonly balance: BalanceManager;
     public readonly transactions: TransactionTracker;
     public readonly crossChain: CrossChainManager;
     public readonly sponsor: GasSponsor;
     public readonly transactionParser: TransactionParser;
     public readonly spendingLimits: SpendingLimitsManager;
+    public readonly recovery: RecoveryManager | null;
+    public readonly multisig: MultisigManager | null;
     private readonly chain: ChainClient;
     private readonly relayer?: RelayerClient;
     // TODO: Use relayerApiKey when relayer integration is complete (Issue #8)
@@ -137,6 +145,15 @@ export class VeridexSDK {
             });
         }
 
+        this.account = new AccountManager({
+            passkey: this.passkey,
+            wallet: this.wallet,
+            chain: this.chain,
+            relayer: this.relayer,
+            testnet: this.testnet,
+            getUnifiedIdentity: () => this.getUnifiedIdentity(),
+        });
+
         // Initialize transaction parser for human-readable summaries (Issue #26)
         this.transactionParser = new TransactionParser({
             defaultChainId: this.chain.getConfig().wormholeChainId,
@@ -145,6 +162,26 @@ export class VeridexSDK {
             // TODO: Integrate price oracle when available
             // getTokenPrice: async (token, chainId) => { ... }
         });
+
+        // Initialize recovery manager (ADR-0040) — only on recovery-capable chains
+        try {
+            this.recovery = new RecoveryManager({
+                passkey: this.passkey,
+                chain: this.chain,
+            });
+        } catch {
+            this.recovery = null;
+        }
+
+        // Initialize multisig manager (ADR-0037) — only on multisig-capable chains
+        try {
+            this.multisig = new MultisigManager({
+                passkey: this.passkey,
+                chain: this.chain,
+            });
+        } catch {
+            this.multisig = null;
+        }
 
         // Initialize spending limits manager (Issue #27)
         this.spendingLimits = new SpendingLimitsManager({
@@ -161,6 +198,24 @@ export class VeridexSDK {
 
     getChainClient(): ChainClient {
         return this.chain;
+    }
+
+    /**
+     * Returns a capability matrix for the current chain, useful for integrator
+     * UIs to understand what operations the platform supports.
+     */
+    getCapabilityMatrix(platformInfo?: {
+        webauthnSupported: boolean;
+        conditionalUISupported: boolean;
+        platformAuthenticatorAvailable: boolean;
+    }): PlatformCapabilityMatrix {
+        const config = this.chain.getConfig();
+        const platform = platformInfo ?? {
+            webauthnSupported: typeof globalThis !== 'undefined' && 'PublicKeyCredential' in globalThis,
+            conditionalUISupported: false,
+            platformAuthenticatorAvailable: false,
+        };
+        return buildCapabilityMatrix(config.name.toLowerCase(), platform, !!this.relayer);
     }
 
     async getNonce(): Promise<bigint> {
@@ -193,6 +248,9 @@ export class VeridexSDK {
             throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
         }
 
+        // ADR-0037: Block direct dispatch if multisig policy protects transfers
+        await this.multisig?.assertDirectDispatchAllowed('transfer');
+
         const actionPayload = await this.buildTransferPayload(params);
         const nonce = await this.getNonce();
         const challenge = buildChallenge(
@@ -221,6 +279,9 @@ export class VeridexSDK {
             throw new Error('No credential set');
         }
 
+        // ADR-0037: Block direct dispatch if multisig policy protects executions
+        await this.multisig?.assertDirectDispatchAllowed('execute');
+
         const actionPayload = await this.buildExecutePayload(params);
         const nonce = await this.getNonce();
         const challenge = buildChallenge(
@@ -248,6 +309,9 @@ export class VeridexSDK {
         if (!credential) {
             throw new Error('No credential set');
         }
+
+        // ADR-0037: Block direct dispatch if multisig policy protects bridge operations
+        await this.multisig?.assertDirectDispatchAllowed('bridge');
 
         const actionPayload = await this.buildBridgePayload(params);
         const nonce = await this.getNonce();
@@ -354,6 +418,9 @@ export class VeridexSDK {
         if (!credential) {
             throw new Error('No credential set');
         }
+
+        // ADR-0037: Block direct dispatch if multisig policy protects bridge operations
+        await this.multisig?.assertDirectDispatchAllowed('bridge');
 
         // Check expiration
         if (Date.now() > prepared.expiresAt) {
@@ -492,6 +559,9 @@ export class VeridexSDK {
         if (!credential) {
             throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
         }
+
+        // ADR-0037: Block direct dispatch if multisig policy protects bridge operations
+        await this.multisig?.assertDirectDispatchAllowed('bridge');
 
         if (!this.relayer) {
             throw new Error('Relayer not configured. Please provide relayerUrl in SDK config.');
@@ -987,6 +1057,9 @@ export class VeridexSDK {
             throw new Error('No credential set');
         }
 
+        // ADR-0037: Block direct dispatch if multisig policy protects transfers
+        await this.multisig?.assertDirectDispatchAllowed('transfer');
+
         // Check if prepared transfer has expired
         if (Date.now() > prepared.expiresAt) {
             throw new Error('Prepared transfer has expired. Please call prepareTransfer() again.');
@@ -1046,6 +1119,9 @@ export class VeridexSDK {
         if (!credential) {
             throw new Error('No credential set');
         }
+
+        // ADR-0037: Block direct dispatch if multisig policy protects transfers
+        await this.multisig?.assertDirectDispatchAllowed('transfer');
 
         // Execute the transfer
         const actionPayload = await this.buildTransferPayload(params);
@@ -1111,6 +1187,9 @@ export class VeridexSDK {
         if (!credential) {
             throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
         }
+
+        // ADR-0037: Block direct dispatch if multisig policy protects transfers
+        await this.multisig?.assertDirectDispatchAllowed('transfer');
 
         // Ensure relayer is available
         if (!this.relayer) {

@@ -116,6 +116,9 @@ export interface CrossOriginSession {
 
     /** Server-validated session token ID (from relayer) */
     serverSessionId?: string;
+
+    /** Relayer-issued challenge binding for server session creation */
+    serverChallengeId?: string;
 }
 
 /** Server-side session token returned by the relayer */
@@ -126,6 +129,12 @@ export interface ServerSessionToken {
     permissions: string[];
     expiresAt: number;
     createdAt: number;
+}
+
+interface ServerSessionChallenge {
+    id: string;
+    value: string;
+    expiresAt: number;
 }
 
 export interface AuthPortalMessage {
@@ -146,7 +155,6 @@ export interface AuthPortalMessage {
  */
 export class CrossOriginAuth {
     private config: Required<CrossOriginAuthConfig>;
-    private passkeyManager: PasskeyManager | null = null;
 
     constructor(config: CrossOriginAuthConfig = {}) {
         this.config = {
@@ -242,24 +250,36 @@ export class CrossOriginAuth {
      * Opens a popup or redirects to auth.veridex.network where the user
      * signs with their passkey, then returns a session to the calling app.
      */
-    async connectWithVeridex(): Promise<CrossOriginSession> {
+    async connectWithVeridex(options?: {
+        sessionChallengeId?: string;
+        sessionChallenge?: string;
+    }): Promise<CrossOriginSession> {
         if (this.config.mode === 'popup') {
-            return this.authenticateViaPopup();
+            return this.authenticateViaPopup(options);
         } else {
-            return this.initiateRedirectAuth();
+            return this.initiateRedirectAuth(options);
         }
     }
 
     /**
      * Popup-based authentication flow.
      */
-    private async authenticateViaPopup(): Promise<CrossOriginSession> {
+    private async authenticateViaPopup(options?: {
+        sessionChallengeId?: string;
+        sessionChallenge?: string;
+    }): Promise<CrossOriginSession> {
         return new Promise((resolve, reject) => {
             const state = this.generateState();
             const authUrl = new URL('/auth', this.config.authPortalUrl);
             authUrl.searchParams.set('state', state);
             authUrl.searchParams.set('origin', window.location.origin);
             authUrl.searchParams.set('callback', 'postMessage');
+            if (options?.sessionChallengeId) {
+                authUrl.searchParams.set('challenge_id', options.sessionChallengeId);
+            }
+            if (options?.sessionChallenge) {
+                authUrl.searchParams.set('challenge', options.sessionChallenge);
+            }
 
             // Open popup
             const popup = window.open(
@@ -311,7 +331,10 @@ export class CrossOriginAuth {
      * Redirect-based authentication flow.
      * Stores state in sessionStorage and redirects to auth portal.
      */
-    private async initiateRedirectAuth(): Promise<CrossOriginSession> {
+    private async initiateRedirectAuth(options?: {
+        sessionChallengeId?: string;
+        sessionChallenge?: string;
+    }): Promise<CrossOriginSession> {
         const state = this.generateState();
 
         // Store state for verification after redirect
@@ -322,6 +345,12 @@ export class CrossOriginAuth {
         authUrl.searchParams.set('state', state);
         authUrl.searchParams.set('redirect_uri', this.config.redirectUri);
         authUrl.searchParams.set('origin', window.location.origin);
+        if (options?.sessionChallengeId) {
+            authUrl.searchParams.set('challenge_id', options.sessionChallengeId);
+        }
+        if (options?.sessionChallenge) {
+            authUrl.searchParams.set('challenge', options.sessionChallenge);
+        }
 
         // Redirect - this will not resolve, page navigates away
         window.location.href = authUrl.toString();
@@ -377,6 +406,46 @@ export class CrossOriginAuth {
         return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    private decodeBase64Url(value: string): Uint8Array {
+        const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+        const binary = atob(padded);
+        const bytes = new Uint8Array(binary.length);
+
+        for (let index = 0; index < binary.length; index++) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+
+        return bytes;
+    }
+
+    private async requestServerSessionChallenge(options?: {
+        keyHash?: string;
+        sessionPublicKey?: string;
+        permissions?: string[];
+        expiresInMs?: number;
+    }): Promise<ServerSessionChallenge> {
+        const response = await fetch(`${this.config.relayerUrl}/session/challenge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                keyHash: options?.keyHash,
+                appOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+                sessionPublicKey: options?.sessionPublicKey ?? '',
+                permissions: options?.permissions ?? ['read', 'transfer'],
+                expiresInMs: options?.expiresInMs ?? 3600000,
+            }),
+        });
+
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(data.error || `Failed to issue server session challenge: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.challenge as ServerSessionChallenge;
+    }
+
     /**
      * Get the RP ID being used.
      */
@@ -400,16 +469,13 @@ export class CrossOriginAuth {
      * Call this after authenticating (via ROR or auth portal) to get a
      * server-side session that the relayer can verify on subsequent requests.
      */
-    async createServerSession(
-        session: CrossOriginSession,
-        options?: {
-            permissions?: string[];
-            expiresInMs?: number;
-        }
-    ): Promise<ServerSessionToken> {
+    async createServerSession(session: CrossOriginSession): Promise<ServerSessionToken> {
         const keyHash = session.credential?.keyHash;
         if (!keyHash) {
             throw new Error('Session must include credential with keyHash');
+        }
+        if (!session.serverChallengeId) {
+            throw new Error('Session must include a relayer-issued serverChallengeId');
         }
 
         const response = await fetch(`${this.config.relayerUrl}/session/create`, {
@@ -419,8 +485,7 @@ export class CrossOriginAuth {
                 keyHash,
                 appOrigin: typeof window !== 'undefined' ? window.location.origin : '',
                 sessionPublicKey: session.sessionPublicKey || '',
-                permissions: options?.permissions ?? ['read', 'transfer'],
-                expiresInMs: options?.expiresInMs ?? 3600000,
+                challengeId: session.serverChallengeId,
                 signature: session.signature,
             }),
         });
@@ -474,19 +539,38 @@ export class CrossOriginAuth {
         let session: CrossOriginSession;
 
         if (await this.supportsRelatedOrigins()) {
-            const result = await this.authenticate();
+            const bootstrap = await this.authenticate();
+            const challenge = await this.requestServerSessionChallenge({
+                keyHash: bootstrap.credential.keyHash,
+                sessionPublicKey: '',
+                permissions: options?.permissions,
+                expiresInMs: options?.expiresInMs,
+            });
+            const result = await this.authenticate(this.decodeBase64Url(challenge.value));
             session = {
                 address: '',
                 sessionPublicKey: '',
                 expiresAt: Date.now() + (options?.expiresInMs ?? 3600000),
                 signature: result.signature,
                 credential: result.credential,
+                serverChallengeId: challenge.id,
             };
         } else {
-            session = await this.connectWithVeridex();
+            const bootstrap = await this.connectWithVeridex();
+            const challenge = await this.requestServerSessionChallenge({
+                keyHash: bootstrap.credential.keyHash,
+                sessionPublicKey: bootstrap.sessionPublicKey,
+                permissions: options?.permissions,
+                expiresInMs: options?.expiresInMs,
+            });
+            session = await this.connectWithVeridex({
+                sessionChallengeId: challenge.id,
+                sessionChallenge: challenge.value,
+            });
+            session.serverChallengeId = challenge.id;
         }
 
-        const serverSession = await this.createServerSession(session, options);
+        const serverSession = await this.createServerSession(session);
         session.serverSessionId = serverSession.id;
 
         return { session, serverSession };

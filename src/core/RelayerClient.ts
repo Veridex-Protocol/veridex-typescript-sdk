@@ -219,6 +219,53 @@ export interface RelayerClientConfig {
     maxRetries?: number;
 }
 
+export type RegisteredAppStatus = 'active' | 'suspended' | 'revoked';
+export type RegisteredAppTrustLevel = 'verified' | 'registered' | 'pending';
+
+export interface RegisteredAppSummary {
+    id: string;
+    name: string;
+    origin: string;
+    trustLevel: RegisteredAppTrustLevel;
+    status: RegisteredAppStatus;
+    requestCount: number;
+    createdAt: number;
+    lastUsedAt?: number;
+}
+
+export interface RegisteredAppDetail extends RegisteredAppSummary {
+    description?: string;
+    apiKey?: string;
+    activeSessionCount?: number;
+}
+
+export interface RelayerAppSession {
+    id: string;
+    keyHash: string;
+    appOrigin: string;
+    sessionPublicKey: string;
+    permissions: string[];
+    expiresAt: number;
+    createdAt: number;
+    revoked: boolean;
+    active: boolean;
+}
+
+export interface CredentialMetadataRecord {
+    credentialId: string;
+    keyHash: string;
+    displayName: string;
+    platformHint: string;
+    backupEligible: boolean | null;
+    backupState: boolean | null;
+    isRoot: boolean;
+    status: 'active' | 'revoked';
+    lastUsedAt: number | null;
+    useCount: number;
+    createdAt: number;
+    updatedAt: number;
+}
+
 // ============================================================================
 // Default Configuration
 // ============================================================================
@@ -487,6 +534,53 @@ export class RelayerClient {
         } catch {
             return false;
         }
+    }
+
+    // ========================================================================
+    // Account And Control Plane
+    // ========================================================================
+
+    async listApps(): Promise<RegisteredAppSummary[]> {
+        const response = await this.fetch('/api/v1/apps');
+        return (response.apps ?? []) as RegisteredAppSummary[];
+    }
+
+    async getApp(appId: string): Promise<RegisteredAppDetail> {
+        const response = await this.fetch(`/api/v1/apps/${encodeURIComponent(appId)}`);
+        return response.app as RegisteredAppDetail;
+    }
+
+    async updateAppStatus(appId: string, status: RegisteredAppStatus): Promise<void> {
+        await this.fetch(`/api/v1/apps/${encodeURIComponent(appId)}/status`, {
+            method: 'PUT',
+            body: JSON.stringify({ status }),
+        });
+    }
+
+    async updateAppTrustLevel(appId: string, trustLevel: RegisteredAppTrustLevel): Promise<void> {
+        await this.fetch(`/api/v1/apps/${encodeURIComponent(appId)}/trust-level`, {
+            method: 'PUT',
+            body: JSON.stringify({ trustLevel }),
+        });
+    }
+
+    async listAppSessions(appId: string, options?: { includeRevoked?: boolean }): Promise<RelayerAppSession[]> {
+        const query = options?.includeRevoked ? '?includeRevoked=true' : '';
+        const response = await this.fetch(`/api/v1/apps/${encodeURIComponent(appId)}/sessions${query}`);
+        return (response.sessions ?? []) as RelayerAppSession[];
+    }
+
+    async revokeAppSessions(appId: string, sessionId?: string): Promise<number> {
+        const response = await this.fetch(`/api/v1/apps/${encodeURIComponent(appId)}/sessions/revoke`, {
+            method: 'POST',
+            body: JSON.stringify(sessionId ? { sessionId } : {}),
+        });
+        return Number(response.revokedCount ?? 0);
+    }
+
+    async listCredentialMetadata(keyHash: string): Promise<CredentialMetadataRecord[]> {
+        const response = await this.fetch(`/api/v1/credential/metadata?keyHash=${encodeURIComponent(keyHash)}`);
+        return (response.credentials ?? []) as CredentialMetadataRecord[];
     }
 
     // ========================================================================
