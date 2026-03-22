@@ -410,7 +410,10 @@ describe('VeridexSDK', () => {
 
         expect(res.transactionHash).toBe('0xtx');
         expect(crossChain.trackTransfer).toHaveBeenCalledTimes(1);
-        expect(tx.track).toHaveBeenCalledTimes(1);
-        expect(balance.invalidateCache).toHaveBeenCalledWith(config.wormholeChainId, '0xvault');
+        // track is called twice: once for transaction tracking, once for cache invalidation callback
+        expect(tx.track).toHaveBeenCalledTimes(2);
+        // The cache invalidation callback is registered, not called synchronously
+        const cacheTrackCall = tx.track.mock.calls[1];
+        expect(typeof cacheTrackCall[2]).toBe('function');
     });
 });
