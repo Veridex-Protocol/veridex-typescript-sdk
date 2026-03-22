@@ -324,6 +324,164 @@ const prepared = await sdk.prepareSetDailyLimit(ethers.parseEther('5.0'));
 await sdk.executeTransfer(prepared, signer);
 ```
 
+### Error Handling
+
+All SDK methods throw `VeridexError` with typed error codes, so you can handle errors programmatically:
+
+```typescript
+import { VeridexError, VeridexErrorCode, normalizeError } from '@veridex/sdk';
+
+try {
+  await sdk.executeTransfer(prepared, signer);
+} catch (err) {
+  if (err instanceof VeridexError) {
+    switch (err.code) {
+      case VeridexErrorCode.NO_CREDENTIAL:
+        console.log('Register a passkey first');
+        break;
+      case VeridexErrorCode.INSUFFICIENT_BALANCE:
+        console.log('Not enough funds');
+        break;
+      case VeridexErrorCode.RPC_ERROR:
+        console.log('Network issue — retry');
+        break;
+      default:
+        console.log(`SDK error [${err.code}]: ${err.message}`);
+    }
+  }
+}
+```
+
+`normalizeError()` converts chain-specific errors (Solana program errors, EVM reverts, Starknet failures) into consistent `VeridexError` instances:
+
+```typescript
+try {
+  await solanaClient.dispatch(payload);
+} catch (err) {
+  const normalized = normalizeError(err);
+  // normalized is always a VeridexError, even if the original was a raw RPC error
+  console.log(normalized.code, normalized.message);
+}
+```
+
+Available error codes: `NO_CREDENTIAL`, `VAULT_NOT_FOUND`, `INSUFFICIENT_BALANCE`, `BRIDGE_FAILED`, `RELAYER_ERROR`, `RPC_ERROR`, `TRANSACTION_FAILED`, `INVALID_ACTION`, `INVALID_PARAMS`, `UNAUTHORIZED`, `UNSUPPORTED_CHAIN`, `UNSUPPORTED_FEATURE`, `TIMEOUT`, `UNKNOWN`.
+
+### Feature Discovery
+
+Not all chains support the same features. Use `supportsFeature()` and `getCapabilityMatrix()` to check before calling:
+
+```typescript
+// Check a single feature
+if (sdk.supportsFeature('sessions')) {
+  const session = await sessionManager.createSession({ duration: 3600 });
+}
+
+// Full capability matrix for UI toggling
+const caps = sdk.getCapabilityMatrix();
+console.log(caps);
+// {
+//   sessions: true,
+//   bridging: true,
+//   gaslessTransfers: true,
+//   spendingLimits: true,
+//   multisig: true,
+//   batchOperations: true,
+//   ...
+// }
+```
+
+### Balance Watching
+
+Subscribe to real-time balance changes with polling-based watchers:
+
+```typescript
+import { BalanceWatcher } from '@veridex/sdk';
+
+const watcher = new BalanceWatcher(sdk, {
+  pollIntervalMs: 5000,          // Poll every 5s (default: 10s)
+  cacheTtlMs: 3000,              // Cache results for 3s (default: 5s)
+});
+
+// Subscribe to balance updates
+const unsubscribe = watcher.subscribe((balances) => {
+  for (const b of balances.tokens) {
+    console.log(`${b.token.symbol}: ${b.formatted}`);
+  }
+});
+
+// Start watching
+watcher.start();
+
+// Later, stop and clean up
+watcher.stop();
+unsubscribe();
+```
+
+### Multi-Chain Portfolio
+
+Get a combined view of vault addresses and balances across all supported chains:
+
+```typescript
+// All vault addresses in one call
+const addresses = sdk.getMultiChainAddresses();
+// { 30: '0xabc...', 24: '0xdef...', 1: 'So1ana...' }
+
+// Full portfolio across chains
+const portfolio = await sdk.getMultiChainPortfolio();
+for (const entry of portfolio) {
+  console.log(`${entry.chainName}: $${entry.totalUsdValue}`);
+  for (const token of entry.tokens) {
+    console.log(`  ${token.token.symbol}: ${token.formatted}`);
+  }
+}
+
+// Or query specific chains only
+const evmPortfolio = await sdk.getMultiChainPortfolio([30, 24, 23]);
+```
+
+### Enterprise Manager
+
+Batch operations with concurrency control and lifecycle callbacks for production workloads:
+
+```typescript
+import { EnterpriseManager } from '@veridex/sdk';
+
+const enterprise = new EnterpriseManager({
+  sdk,
+  signer,
+  maxConcurrency: 5,  // Run up to 5 ops in parallel (default: 3)
+});
+
+// Batch vault creation
+const vaults = await enterprise.batchCreateVaults(
+  { keyHashes: ['0xabc...', '0xdef...', '0x123...'] },
+  (event) => {
+    // Lifecycle callback — track progress in UI
+    console.log(`[${event.status}] Item ${event.index}: ${event.message}`);
+  },
+);
+
+// Batch transfers
+const transfers = await enterprise.batchTransfer(
+  {
+    transfers: [
+      { targetChain: 10004, token: '0x...', recipient: '0x...', amount: 1000000n },
+      { targetChain: 10005, token: '0x...', recipient: '0x...', amount: 2000000n },
+    ],
+  },
+  (event) => console.log(`Transfer ${event.index}: ${event.status}`),
+);
+console.log(`${transfers.successful}/${transfers.total} succeeded`);
+
+// Batch spending limits
+const limits = await enterprise.batchSetSpendingLimits({
+  limits: [
+    { vaultAddress: '0x...', dailyLimit: 5000000000000000000n },
+    { vaultAddress: '0x...', dailyLimit: 10000000000000000000n },
+  ],
+});
+```
+
 ## Chain Clients
 
 Each chain has a dedicated client implementing the `ChainClient` interface:
