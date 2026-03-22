@@ -54,6 +54,10 @@ export {
     createTestnetSDK,
     createMainnetSDK,
     createSessionSDK,
+    createEnterpriseSDK,
+
+    // Chain client factory (public)
+    createChainClient,
 
     // Chain presets
     CHAIN_NAMES,
@@ -78,6 +82,7 @@ export type {
     // Factory types
     SimpleSDKConfig,
     SessionConfig as SimpleSessionConfig,
+    EnterpriseSDKConfig,
     ChainName,
     NetworkType,
     FeatureFlags,
@@ -497,6 +502,49 @@ export type {
     MultiChainVaultResult,
     SponsorshipSource,
 } from './core/GasSponsor.js';
+
+// ============================================================================
+// Unified Error Normalization
+// ============================================================================
+
+export {
+    VeridexError,
+    VeridexErrorCode as UnifiedErrorCode,
+    normalizeError,
+} from './core/VeridexError.js';
+
+// ============================================================================
+// Balance Watcher (Subscription API)
+// ============================================================================
+
+export { BalanceWatcher } from './core/BalanceWatcher.js';
+export type {
+    BalanceChangeEvent,
+    TokenBalanceChange,
+    BalanceWatcherOptions,
+    BalanceChangeCallback,
+    BalanceErrorCallback,
+    BalanceEventType,
+    Unsubscribe,
+} from './core/BalanceWatcher.js';
+
+// ============================================================================
+// Enterprise Manager
+// ============================================================================
+
+export { EnterpriseManager } from './core/EnterpriseManager.js';
+export type {
+    EnterpriseManagerConfig,
+    BatchVaultRequest,
+    BatchVaultResult,
+    VaultOverview,
+    BatchTransferRequest,
+    BatchTransferResult,
+    BatchSpendingLimitRequest,
+    BatchSpendingLimitResult,
+    BatchLifecycleEvent,
+    BatchLifecycleCallback,
+} from './core/EnterpriseManager.js';
 
 // Re-export Session Manager types (Issue #14)
 export type {

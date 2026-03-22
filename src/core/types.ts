@@ -60,6 +60,12 @@ export interface VeridexConfig {
      * Maps Wormhole chain ID to RPC URL
      */
     chainRpcUrls?: Record<number, string>;
+
+    /**
+     * Custom TTL for prepared transfers in milliseconds.
+     * Defaults to 5 minutes (300 000 ms). Capped at 30 minutes.
+     */
+    preparedTransferTtl?: number;
 }
 
 export interface WalletManagerConfig {

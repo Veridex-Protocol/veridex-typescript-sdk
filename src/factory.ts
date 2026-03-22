@@ -123,9 +123,13 @@ export interface SessionConfig {
 // ============================================================================
 
 /**
- * Create the appropriate chain client based on chain type
+ * Create the appropriate chain client based on chain type.
+ *
+ * Exposed as a public API so integrators can instantiate chain clients
+ * independently of the full VeridexSDK constructor (e.g. for testing
+ * or for dynamic multi-chain client access).
  */
-function createChainClient(
+export function createChainClient(
   chain: ChainName,
   network: NetworkType,
   customRpcUrl?: string
@@ -394,6 +398,60 @@ export function createSessionSDK(
   }
 
   return createSDK(chain, config);
+}
+
+// ============================================================================
+// Enterprise Factory
+// ============================================================================
+
+/**
+ * Enterprise SDK configuration — extends SimpleSDKConfig with required sponsor/relayer keys.
+ */
+export interface EnterpriseSDKConfig extends SimpleSDKConfig {
+    /**
+     * Sponsor private key for gasless vault creation (required for batch ops)
+     */
+    sponsorPrivateKey: string;
+
+    /**
+     * Relayer URL (required for enterprise)
+     */
+    relayerUrl: string;
+
+    /**
+     * Relayer API key (required for enterprise)
+     */
+    relayerApiKey: string;
+}
+
+/**
+ * Create an SDK pre-configured for enterprise / integrator back-end use.
+ *
+ * This factory requires `sponsorPrivateKey`, `relayerUrl`, and `relayerApiKey`
+ * — features that enterprise environments always need.
+ *
+ * @param chain - Chain name (e.g., 'base')
+ * @param config - Enterprise-specific configuration
+ * @returns VeridexSDK ready for enterprise operations
+ *
+ * @example
+ * ```typescript
+ * import { createEnterpriseSDK, EnterpriseManager } from '@veridex/sdk';
+ *
+ * const sdk = createEnterpriseSDK('base', {
+ *   sponsorPrivateKey: process.env.SPONSOR_KEY!,
+ *   relayerUrl: 'https://relayer.veridex.network',
+ *   relayerApiKey: process.env.RELAYER_KEY!,
+ * });
+ *
+ * const enterprise = new EnterpriseManager({ sdk });
+ * ```
+ */
+export function createEnterpriseSDK(
+    chain: ChainName,
+    config: EnterpriseSDKConfig,
+): VeridexSDK {
+    return createSDK(chain, config);
 }
 
 // ============================================================================

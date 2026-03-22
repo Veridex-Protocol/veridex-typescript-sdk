@@ -20,8 +20,11 @@ import { SpendingLimitsManager } from './SpendingLimitsManager.js';
 import { AccountManager } from './AccountManager.js';
 import { RecoveryManager } from './RecoveryManager.js';
 import { MultisigManager } from './MultisigManager.js';
-import { buildCapabilityMatrix } from './PolicyEnforcement.js';
-import type { PlatformCapabilityMatrix } from './PolicyEnforcement.js';
+import { buildCapabilityMatrix, CHAIN_CAPABILITIES } from './PolicyEnforcement.js';
+import type { PlatformCapabilityMatrix, ChainCapabilities } from './PolicyEnforcement.js';
+import { normalizeError, VeridexError, VeridexErrorCode } from './VeridexError.js';
+import { BalanceWatcher } from './BalanceWatcher.js';
+import type { BalanceChangeCallback, BalanceErrorCallback, BalanceWatcherOptions, Unsubscribe } from './BalanceWatcher.js';
 import type { SpendingLimits, FormattedSpendingLimits, LimitCheckResult } from './SpendingLimits.types.js';
 import { ethers } from 'ethers';
 // NOTE: authenticateAndPrepare and queryPortfolio are loaded via dynamic import()
@@ -64,8 +67,10 @@ import type {
     AuthorizedKey,
 } from './types.js';
 
-/** Expiration time for prepared transfers (5 minutes) */
-const PREPARED_TRANSFER_TTL = 5 * 60 * 1000;
+/** Default expiration time for prepared transfers (5 minutes) */
+const DEFAULT_PREPARED_TRANSFER_TTL = 5 * 60 * 1000;
+/** Maximum allowed TTL for prepared transfers (30 minutes) */
+const MAX_PREPARED_TRANSFER_TTL = 30 * 60 * 1000;
 
 export class VeridexSDK {
     public readonly passkey: PasskeyManager;
@@ -79,6 +84,7 @@ export class VeridexSDK {
     public readonly spendingLimits: SpendingLimitsManager;
     public readonly recovery: RecoveryManager | null;
     public readonly multisig: MultisigManager | null;
+    public readonly balanceWatcher: BalanceWatcher;
     private readonly chain: ChainClient;
     private readonly relayer?: RelayerClient;
     // TODO: Use relayerApiKey when relayer integration is complete (Issue #8)
@@ -88,6 +94,7 @@ export class VeridexSDK {
     private readonly sponsorPrivateKey?: string;
     private readonly chainRpcUrls?: Record<number, string>;
     private readonly chainDetector: ChainDetector;
+    private readonly preparedTransferTtl: number;
     private unifiedIdentity: UnifiedIdentity | null = null;
 
     constructor(config: VeridexConfig) {
@@ -190,6 +197,19 @@ export class VeridexSDK {
             rpcUrls: config.chainRpcUrls ?? {},
             cacheTtl: 10000, // 10 seconds
         });
+
+        // Initialize balance watcher (polling-based subscription)
+        this.balanceWatcher = new BalanceWatcher(
+            async (chainId, address) => {
+                return this.balance.getPortfolioBalance(chainId, address, false);
+            },
+        );
+
+        // Configurable TTL for prepared transfers (clamped to MAX)
+        this.preparedTransferTtl = Math.min(
+            config.preparedTransferTtl ?? DEFAULT_PREPARED_TRANSFER_TTL,
+            MAX_PREPARED_TRANSFER_TTL,
+        );
     }
 
     getChainConfig() {
@@ -218,10 +238,84 @@ export class VeridexSDK {
         return buildCapabilityMatrix(config.name.toLowerCase(), platform, !!this.relayer);
     }
 
+    /**
+     * Check if a specific feature is supported on the current chain.
+     *
+     * Unlike `getCapabilityMatrix()` which returns the full matrix, this is a
+     * simple boolean check for the most common per-chain capability queries.
+     *
+     * @param feature - Feature name to check
+     * @returns `true` if fully or partially supported; `false` if unsupported
+     *
+     * @example
+     * ```typescript
+     * if (sdk.supportsFeature('recovery')) {
+     *   // Show recovery UI
+     * }
+     * ```
+     */
+    supportsFeature(feature: keyof ChainCapabilities): boolean {
+        const chainType = this.chain.getConfig().name.toLowerCase();
+        // Resolve the canonical chain type string used in CHAIN_CAPABILITIES
+        const type = this.resolveChainType(chainType);
+        const caps = CHAIN_CAPABILITIES[type];
+        if (!caps) return false;
+        return caps[feature] !== 'unsupported';
+    }
+
+    /**
+     * Resolve a chain name to its CHAIN_CAPABILITIES key.
+     */
+    private resolveChainType(chainName: string): string {
+        // Direct match
+        if (CHAIN_CAPABILITIES[chainName]) return chainName;
+        // Common renames
+        if (chainName.includes('base') || chainName.includes('optimism') || chainName.includes('arbitrum') || chainName.includes('ethereum') || chainName.includes('polygon') || chainName.includes('celo')) return 'evm';
+        if (chainName.includes('avalanche') || chainName.includes('fuji')) return 'avalanche';
+        if (chainName.includes('solana')) return 'solana';
+        if (chainName.includes('aptos')) return 'aptos';
+        if (chainName.includes('sui')) return 'sui';
+        if (chainName.includes('starknet')) return 'starknet';
+        if (chainName.includes('stacks')) return 'stacks';
+        return 'evm'; // safe default
+    }
+
+    /**
+     * Watch for balance changes on a vault.
+     *
+     * Uses polling under the hood; the returned function stops the watcher.
+     *
+     * @example
+     * ```typescript
+     * const unsub = sdk.watchBalance(
+     *   (event) => console.log('Balance changed:', event.changes),
+     *   { intervalMs: 10_000 },
+     * );
+     *
+     * // later
+     * unsub();
+     * ```
+     */
+    watchBalance(
+        onChange: BalanceChangeCallback,
+        options?: BalanceWatcherOptions,
+        onError?: BalanceErrorCallback,
+    ): Unsubscribe {
+        const chainConfig = this.chain.getConfig();
+        const vaultAddress = this.getVaultAddress();
+        return this.balanceWatcher.watch(
+            chainConfig.wormholeChainId,
+            vaultAddress,
+            onChange,
+            options,
+            onError,
+        );
+    }
+
     async getNonce(): Promise<bigint> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
         return await this.chain.getNonce(credential.keyHash);
     }
@@ -245,95 +339,107 @@ export class VeridexSDK {
     async transfer(params: TransferParams, signer: any): Promise<DispatchResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects transfers
         await this.multisig?.assertDirectDispatchAllowed('transfer');
 
-        const actionPayload = await this.buildTransferPayload(params);
-        const nonce = await this.getNonce();
-        const challenge = buildChallenge(
-            credential.keyHash,
-            params.targetChain,
-            nonce,
-            actionPayload
-        );
+        try {
+            const actionPayload = await this.buildTransferPayload(params);
+            const nonce = await this.getNonce();
+            const challenge = buildChallenge(
+                credential.keyHash,
+                params.targetChain,
+                nonce,
+                actionPayload
+            );
 
-        const signature = await this.passkey.sign(challenge);
+            const signature = await this.passkey.sign(challenge);
 
-        return await this.chain.dispatch(
-            signature,
-            credential.publicKeyX,
-            credential.publicKeyY,
-            params.targetChain,
-            actionPayload,
-            nonce,
-            signer
-        );
+            return await this.chain.dispatch(
+                signature,
+                credential.publicKeyX,
+                credential.publicKeyY,
+                params.targetChain,
+                actionPayload,
+                nonce,
+                signer
+            );
+        } catch (err) {
+            throw normalizeError(err, this.chain.getConfig().name);
+        }
     }
 
     async execute(params: ExecuteParams, signer: any): Promise<DispatchResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects executions
         await this.multisig?.assertDirectDispatchAllowed('execute');
 
-        const actionPayload = await this.buildExecutePayload(params);
-        const nonce = await this.getNonce();
-        const challenge = buildChallenge(
-            credential.keyHash,
-            params.targetChain,
-            nonce,
-            actionPayload
-        );
+        try {
+            const actionPayload = await this.buildExecutePayload(params);
+            const nonce = await this.getNonce();
+            const challenge = buildChallenge(
+                credential.keyHash,
+                params.targetChain,
+                nonce,
+                actionPayload
+            );
 
-        const signature = await this.passkey.sign(challenge);
+            const signature = await this.passkey.sign(challenge);
 
-        return await this.chain.dispatch(
-            signature,
-            credential.publicKeyX,
-            credential.publicKeyY,
-            params.targetChain,
-            actionPayload,
-            nonce,
-            signer
-        );
+            return await this.chain.dispatch(
+                signature,
+                credential.publicKeyX,
+                credential.publicKeyY,
+                params.targetChain,
+                actionPayload,
+                nonce,
+                signer
+            );
+        } catch (err) {
+            throw normalizeError(err, this.chain.getConfig().name);
+        }
     }
 
     async bridge(params: BridgeParams, signer: any): Promise<DispatchResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects bridge operations
         await this.multisig?.assertDirectDispatchAllowed('bridge');
 
-        const actionPayload = await this.buildBridgePayload(params);
-        const nonce = await this.getNonce();
+        try {
+            const actionPayload = await this.buildBridgePayload(params);
+            const nonce = await this.getNonce();
 
-        const challenge = buildChallenge(
-            credential.keyHash,
-            params.sourceChain,
-            nonce,
-            actionPayload
-        );
+            const challenge = buildChallenge(
+                credential.keyHash,
+                params.sourceChain,
+                nonce,
+                actionPayload
+            );
 
-        const signature = await this.passkey.sign(challenge);
+            const signature = await this.passkey.sign(challenge);
 
-        return await this.chain.dispatch(
-            signature,
-            credential.publicKeyX,
-            credential.publicKeyY,
-            params.sourceChain,
-            actionPayload,
-            nonce,
-            signer
-        );
+            return await this.chain.dispatch(
+                signature,
+                credential.publicKeyX,
+                credential.publicKeyY,
+                params.sourceChain,
+                actionPayload,
+                nonce,
+                signer
+            );
+        } catch (err) {
+            throw normalizeError(err, this.chain.getConfig().name);
+        }
     }
 
     // ========================================================================
@@ -349,7 +455,7 @@ export class VeridexSDK {
     async prepareBridge(params: BridgeParams): Promise<PreparedBridge> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // Build payload and get nonce
@@ -397,7 +503,7 @@ export class VeridexSDK {
             sourceChain: params.sourceChain,
             destinationChain: params.destinationChain,
             preparedAt: Date.now(),
-            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+            expiresAt: Date.now() + this.preparedTransferTtl,
         };
     }
 
@@ -416,7 +522,7 @@ export class VeridexSDK {
     ): Promise<BridgeResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects bridge operations
@@ -424,7 +530,7 @@ export class VeridexSDK {
 
         // Check expiration
         if (Date.now() > prepared.expiresAt) {
-            throw new Error('Prepared bridge has expired. Please call prepareBridge() again.');
+            throw new VeridexError(VeridexErrorCode.EXPIRED);
         }
 
         const startTime = Date.now();
@@ -529,9 +635,18 @@ export class VeridexSDK {
             },
         });
 
-        // Invalidate balance cache
+        // Schedule balance cache invalidation on confirmation
         const vaultAddress = this.getVaultAddress();
-        this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
+        this.transactions.track(
+            dispatchResult.transactionHash,
+            chainConfig.wormholeChainId,
+            (state) => {
+                if (state.status === 'confirmed' || state.status === 'failed') {
+                    this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
+                }
+            },
+            dispatchResult.sequence
+        );
 
         return {
             ...dispatchResult,
@@ -557,14 +672,14 @@ export class VeridexSDK {
     ): Promise<BridgeResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects bridge operations
         await this.multisig?.assertDirectDispatchAllowed('bridge');
 
         if (!this.relayer) {
-            throw new Error('Relayer not configured. Please provide relayerUrl in SDK config.');
+            throw new VeridexError(VeridexErrorCode.RELAYER_ERROR, 'Relayer not configured. Please provide relayerUrl in SDK config.');
         }
 
         const startTime = Date.now();
@@ -626,7 +741,7 @@ export class VeridexSDK {
 
         const relayerResult = await this.relayer.submitSignedAction(submitRequest);
         if (!relayerResult.success) {
-            throw new Error(`Relayer submission failed: ${relayerResult.error}`);
+            throw new VeridexError(VeridexErrorCode.RELAYER_ERROR, `Relayer submission failed: ${relayerResult.error}`);
         }
 
         const txHash = relayerResult.txHash ?? '';
@@ -721,7 +836,7 @@ export class VeridexSDK {
         const provider = evmClient.provider ?? evmClient.getProvider?.();
 
         if (!provider) {
-            throw new Error('Provider not available');
+            throw new VeridexError(VeridexErrorCode.RPC_ERROR, 'Provider not available');
         }
 
         return await this.crossChain.estimateFees(params, chainConfig, provider);
@@ -761,7 +876,7 @@ export class VeridexSDK {
     async prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // Build payload and get nonce
@@ -804,7 +919,7 @@ export class VeridexSDK {
             totalCost,
             formattedCost,
             preparedAt: Date.now(),
-            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+            expiresAt: Date.now() + this.preparedTransferTtl,
         };
     }
 
@@ -928,7 +1043,7 @@ export class VeridexSDK {
     async prepareSetDailyLimit(newLimit: bigint): Promise<PreparedTransfer> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const actionPayload = this.spendingLimits.prepareDailyLimitUpdate(newLimit);
@@ -953,7 +1068,7 @@ export class VeridexSDK {
             totalCost: messageFee,
             formattedCost: '0',
             preparedAt: Date.now(),
-            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+            expiresAt: Date.now() + this.preparedTransferTtl,
         };
     }
 
@@ -970,7 +1085,7 @@ export class VeridexSDK {
     async preparePauseVault(): Promise<PreparedTransfer> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const actionPayload = this.spendingLimits.preparePauseVault();
@@ -995,7 +1110,7 @@ export class VeridexSDK {
             totalCost: messageFee,
             formattedCost: '0',
             preparedAt: Date.now(),
-            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+            expiresAt: Date.now() + this.preparedTransferTtl,
         };
     }
 
@@ -1011,7 +1126,7 @@ export class VeridexSDK {
     async prepareUnpauseVault(): Promise<PreparedTransfer> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const actionPayload = this.spendingLimits.prepareUnpauseVault();
@@ -1036,7 +1151,7 @@ export class VeridexSDK {
             totalCost: messageFee,
             formattedCost: '0',
             preparedAt: Date.now(),
-            expiresAt: Date.now() + PREPARED_TRANSFER_TTL,
+            expiresAt: Date.now() + this.preparedTransferTtl,
         };
     }
 
@@ -1054,7 +1169,7 @@ export class VeridexSDK {
     ): Promise<TransferResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects transfers
@@ -1062,44 +1177,48 @@ export class VeridexSDK {
 
         // Check if prepared transfer has expired
         if (Date.now() > prepared.expiresAt) {
-            throw new Error('Prepared transfer has expired. Please call prepareTransfer() again.');
+            throw new VeridexError(VeridexErrorCode.EXPIRED);
         }
 
-        // Sign with passkey
-        const signature = await this.passkey.sign(prepared.challenge);
+        try {
+            // Sign with passkey
+            const signature = await this.passkey.sign(prepared.challenge);
 
-        // Dispatch the transaction
-        const result = await this.chain.dispatch(
-            signature,
-            credential.publicKeyX,
-            credential.publicKeyY,
-            prepared.params.targetChain,
-            prepared.actionPayload,
-            prepared.nonce,
-            signer
-        );
-
-        // Track the transaction
-        if (result.transactionHash) {
-            const chainConfig = this.chain.getConfig();
-            this.transactions.track(
-                result.transactionHash,
-                chainConfig.wormholeChainId,
-                undefined,
-                result.sequence
+            // Dispatch the transaction
+            const result = await this.chain.dispatch(
+                signature,
+                credential.publicKeyX,
+                credential.publicKeyY,
+                prepared.params.targetChain,
+                prepared.actionPayload,
+                prepared.nonce,
+                signer
             );
+
+            // Track the transaction with cache invalidation on confirmation
+            const vaultAddress = this.getVaultAddress();
+            const chainConfig = this.chain.getConfig();
+            if (result.transactionHash) {
+                this.transactions.track(
+                    result.transactionHash,
+                    chainConfig.wormholeChainId,
+                    (state) => {
+                        if (state.status === 'confirmed' || state.status === 'failed') {
+                            this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
+                        }
+                    },
+                    result.sequence
+                );
+            }
+
+            return {
+                ...result,
+                params: prepared.params,
+                timestamp: Date.now(),
+            };
+        } catch (err) {
+            throw normalizeError(err, this.chain.getConfig().name);
         }
-
-        // Invalidate balance cache for sender
-        const vaultAddress = this.getVaultAddress();
-        const chainConfig = this.chain.getConfig();
-        this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
-
-        return {
-            ...result,
-            params: prepared.params,
-            timestamp: Date.now(),
-        };
     }
 
     /**
@@ -1117,12 +1236,13 @@ export class VeridexSDK {
     ): Promise<TransferResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects transfers
         await this.multisig?.assertDirectDispatchAllowed('transfer');
 
+        try {
         // Execute the transfer
         const actionPayload = await this.buildTransferPayload(params);
         const nonce = await this.getNonce();
@@ -1145,27 +1265,31 @@ export class VeridexSDK {
             signer
         );
 
-        // Track the transaction
+        // Track the transaction with cache invalidation on confirmation
+        const vaultAddress = this.getVaultAddress();
+        const chainConfig = this.chain.getConfig();
         if (result.transactionHash) {
-            const chainConfig = this.chain.getConfig();
             this.transactions.track(
                 result.transactionHash,
                 chainConfig.wormholeChainId,
-                onStatusChange,
+                (state) => {
+                    if (state.status === 'confirmed' || state.status === 'failed') {
+                        this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
+                    }
+                    onStatusChange?.(state);
+                },
                 result.sequence
             );
         }
-
-        // Invalidate balance cache
-        const vaultAddress = this.getVaultAddress();
-        const chainConfig = this.chain.getConfig();
-        this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
 
         return {
             ...result,
             params,
             timestamp: Date.now(),
         };
+        } catch (err) {
+            throw normalizeError(err, this.chain.getConfig().name);
+        }
     }
 
     /**
@@ -1185,7 +1309,7 @@ export class VeridexSDK {
     ): Promise<TransferResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // ADR-0037: Block direct dispatch if multisig policy protects transfers
@@ -1193,7 +1317,7 @@ export class VeridexSDK {
 
         // Ensure relayer is available
         if (!this.relayer) {
-            throw new Error('Relayer not configured. Please provide relayerUrl in SDK config.');
+            throw new VeridexError(VeridexErrorCode.RELAYER_ERROR, 'Relayer not configured. Please provide relayerUrl in SDK config.');
         }
 
         const chainConfig = this.chain.getConfig();
@@ -1223,23 +1347,25 @@ export class VeridexSDK {
         const relayerResult = await this.relayer.submitSignedAction(submitRequest);
 
         if (!relayerResult.success) {
-            throw new Error(`Relayer submission failed: ${relayerResult.error}`);
+            throw new VeridexError(VeridexErrorCode.RELAYER_ERROR, `Relayer submission failed: ${relayerResult.error}`);
         }
 
-        // Track the Hub transaction
+        // Track the Hub transaction with cache invalidation on confirmation
+        const vaultAddress = this.getVaultAddress();
         if (relayerResult.txHash) {
             const hubChainId = chainConfig.hubChainId ?? chainConfig.wormholeChainId;
             this.transactions.track(
                 relayerResult.txHash,
                 hubChainId,
-                onStatusChange,
+                (state) => {
+                    if (state.status === 'confirmed' || state.status === 'failed') {
+                        this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
+                    }
+                    onStatusChange?.(state);
+                },
                 relayerResult.sequence ? BigInt(relayerResult.sequence) : undefined
             );
         }
-
-        // Invalidate balance cache for sender
-        const vaultAddress = this.getVaultAddress();
-        this.balance.invalidateCache(chainConfig.wormholeChainId, vaultAddress);
 
         return {
             transactionHash: relayerResult.txHash ?? '',
@@ -1378,7 +1504,7 @@ export class VeridexSDK {
     async getMultiChainBalances(chainIds: number[]): Promise<PortfolioBalance[]> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // Derive an address per chain and query balances accordingly.
@@ -1468,6 +1594,81 @@ export class VeridexSDK {
     getTokenBySymbol(symbol: string, wormholeChainId?: number): TokenInfo | null {
         const chainId = wormholeChainId ?? this.chain.getConfig().wormholeChainId;
         return getTokenBySymbol(chainId, symbol);
+    }
+
+    // ========================================================================
+    // Multi-Chain Convenience Methods
+    // ========================================================================
+
+    /**
+     * Get vault addresses across all supported chains at once.
+     *
+     * Unlike calling `getVaultAddressForChain()` in a loop, this returns a
+     * structured map that frontends can render directly.
+     *
+     * @example
+     * ```typescript
+     * const addresses = sdk.getMultiChainAddresses();
+     * for (const [chainId, addr] of Object.entries(addresses)) {
+     *   console.log(`Chain ${chainId}: ${addr}`);
+     * }
+     * ```
+     */
+    getMultiChainAddresses(): Record<number, string> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
+        }
+
+        const supportedChains = this.sponsor.getSupportedChains();
+        const addresses: Record<number, string> = {};
+
+        // Always include the current chain
+        const currentChainId = this.chain.getConfig().wormholeChainId;
+        addresses[currentChainId] = this.chain.computeVaultAddress(credential.keyHash);
+
+        for (const chain of supportedChains) {
+            if (addresses[chain.wormholeChainId]) continue;
+            const addr = this.getVaultAddressForChain(chain.wormholeChainId, credential.keyHash);
+            if (addr) {
+                addresses[chain.wormholeChainId] = addr;
+            }
+        }
+
+        return addresses;
+    }
+
+    /**
+     * Get a combined portfolio view across multiple chains.
+     *
+     * Returns vault address + balances per chain, suitable for a dashboard or
+     * portfolio summary screen.
+     *
+     * @example
+     * ```typescript
+     * const portfolio = await sdk.getMultiChainPortfolio();
+     * for (const entry of portfolio) {
+     *   console.log(`${entry.chainName}: ${entry.tokens.length} tokens`);
+     * }
+     * ```
+     *
+     * @param chainIds - Optional array of Wormhole chain IDs. Defaults to all sponsored chains.
+     */
+    async getMultiChainPortfolio(chainIds?: number[]): Promise<PortfolioBalance[]> {
+        const credential = this.passkey.getCredential();
+        if (!credential) {
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
+        }
+
+        // Default to all sponsored chains plus the current chain
+        const ids = chainIds ?? [
+            this.chain.getConfig().wormholeChainId,
+            ...this.sponsor.getSupportedChains()
+                .map(c => c.wormholeChainId)
+                .filter(id => id !== this.chain.getConfig().wormholeChainId),
+        ];
+
+        return this.getMultiChainBalances(ids);
     }
 
     // ========================================================================
@@ -1569,14 +1770,14 @@ export class VeridexSDK {
     async getVaultInfo(targetChainId?: number): Promise<VaultInfo | null> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const chainConfig = this.chain.getConfig();
         const checkChainId = targetChainId ?? chainConfig.wormholeChainId;
 
         if (checkChainId !== chainConfig.wormholeChainId) {
-            throw new Error('Cross-chain vault queries not yet supported. Please create a client for the target chain.');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Cross-chain vault queries not yet supported. Please create a client for the target chain.');
         }
 
         const vaultAddress = await this.chain.getVaultAddress(credential.keyHash);
@@ -1608,7 +1809,7 @@ export class VeridexSDK {
     getVaultAddress(): string {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         return this.chain.computeVaultAddress(credential.keyHash);
@@ -1635,7 +1836,7 @@ export class VeridexSDK {
     getVaultAddressForChain(wormholeChainId: number, keyHash?: string): string | null {
         const hash = keyHash ?? this.passkey.getCredential()?.keyHash;
         if (!hash) {
-            throw new Error('No credential set and no keyHash provided');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL, 'No credential set and no keyHash provided');
         }
 
         const credential = { keyHash: hash } as PasskeyCredential;
@@ -1657,18 +1858,18 @@ export class VeridexSDK {
     ): Promise<PortfolioBalance> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // Get the correct vault address for this chain
         const vaultAddress = this.getVaultAddressForChain(wormholeChainId, credential.keyHash);
         if (!vaultAddress) {
-            throw new Error(`Cannot derive vault address for chain ${wormholeChainId}`);
+            throw new VeridexError(VeridexErrorCode.VAULT_NOT_FOUND, `Cannot derive vault address for chain ${wormholeChainId}`);
         }
 
         const chainConfig = this.chainDetector.getChainConfig(wormholeChainId);
         if (!chainConfig) {
-            throw new Error(`Unknown chain ${wormholeChainId}`);
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, `Unknown chain ${wormholeChainId}`);
         }
 
         // Try Wormhole Queries first for faster, attested results
@@ -1743,7 +1944,7 @@ export class VeridexSDK {
     async getUnifiedIdentity(): Promise<UnifiedIdentity> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // Check if we have cached identity
@@ -1834,7 +2035,7 @@ export class VeridexSDK {
      */
     addChainAddress(address: ChainAddress): void {
         if (!this.unifiedIdentity) {
-            throw new Error('No identity loaded. Call getUnifiedIdentity() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL, 'No identity loaded. Call getUnifiedIdentity() first.');
         }
 
         const existing = this.unifiedIdentity.addresses.findIndex(
@@ -1863,7 +2064,7 @@ export class VeridexSDK {
     async createVault(signer: any): Promise<VaultCreationResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const result = await this.chain.createVault(credential.keyHash, signer);
@@ -1908,16 +2109,16 @@ export class VeridexSDK {
     async createVaultSponsored(wormholeChainId?: number): Promise<VaultCreationResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         if (!this.sponsorPrivateKey) {
-            throw new Error('No sponsor wallet configured. Set sponsorPrivateKey in SDK config.');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'No sponsor wallet configured. Set sponsorPrivateKey in SDK config.');
         }
 
         // Check if chain client supports sponsored creation
         if (!this.chain.createVaultSponsored) {
-            throw new Error('Current chain client does not support sponsored vault creation');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Current chain client does not support sponsored vault creation');
         }
 
         // Get the appropriate RPC URL for the chain
@@ -1975,7 +2176,7 @@ export class VeridexSDK {
     async ensureVaultAuto(signer?: any): Promise<string> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const exists = await this.chain.vaultExists(credential.keyHash);
@@ -1991,7 +2192,7 @@ export class VeridexSDK {
 
         // Fall back to signer-based creation
         if (!signer) {
-            throw new Error('No sponsor configured and no signer provided for vault creation');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'No sponsor configured and no signer provided for vault creation');
         }
 
         const result = await this.createVault(signer);
@@ -2007,7 +2208,7 @@ export class VeridexSDK {
     async ensureVault(signer: any): Promise<string> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const exists = await this.chain.vaultExists(credential.keyHash);
@@ -2025,7 +2226,7 @@ export class VeridexSDK {
     async estimateVaultCreationGas(): Promise<bigint> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         return await this.chain.estimateVaultCreationGas(credential.keyHash);
@@ -2034,7 +2235,7 @@ export class VeridexSDK {
     async vaultExists(): Promise<boolean> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         return await this.chain.vaultExists(credential.keyHash);
@@ -2087,11 +2288,11 @@ export class VeridexSDK {
     async createSponsoredVault(wormholeChainId: number): Promise<SponsoredVaultResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         if (!this.sponsor.isConfigured()) {
-            throw new Error('Gas sponsorship not configured. Set sponsorPrivateKey in SDK config.');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Gas sponsorship not configured. Set sponsorPrivateKey in SDK config.');
         }
 
         const result = await this.sponsor.createVaultOnChain(credential.keyHash, wormholeChainId);
@@ -2133,11 +2334,11 @@ export class VeridexSDK {
     async createSponsoredVaultsOnAllChains(): Promise<MultiChainVaultResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         if (!this.sponsor.isConfigured()) {
-            throw new Error('Gas sponsorship not configured. Set sponsorPrivateKey in SDK config.');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Gas sponsorship not configured. Set sponsorPrivateKey in SDK config.');
         }
 
         const result = await this.sponsor.createVaultsOnAllChains(credential.keyHash);
@@ -2182,7 +2383,7 @@ export class VeridexSDK {
     async checkVaultsOnAllChains(): Promise<Record<number, { exists: boolean; address: string }>> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         return await this.sponsor.checkVaultsOnAllChains(credential.keyHash);
@@ -2196,7 +2397,7 @@ export class VeridexSDK {
     async ensureSponsoredVaultsOnAllChains(): Promise<MultiChainVaultResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         // First check which vaults exist
@@ -2255,7 +2456,7 @@ export class VeridexSDK {
 
         const evmClient = this.chain as any;
         if (typeof evmClient.getIdentityState !== 'function') {
-            throw new Error('Identity management not supported on this chain client');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Identity management not supported on this chain client');
         }
 
         return await evmClient.getIdentityState(credential.keyHash);
@@ -2274,7 +2475,7 @@ export class VeridexSDK {
 
         const evmClient = this.chain as any;
         if (typeof evmClient.getIdentityState !== 'function') {
-            throw new Error('Identity management not supported on this chain client');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Identity management not supported on this chain client');
         }
 
         // Get the identity for this key
@@ -2322,18 +2523,18 @@ export class VeridexSDK {
     ): Promise<AddBackupKeyResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const evmClient = this.chain as any;
         if (typeof evmClient.addBackupKey !== 'function') {
-            throw new Error('Backup passkey management not supported on this chain client');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Backup passkey management not supported on this chain client');
         }
 
         // Get identity state to ensure we're within limits
         const state = await evmClient.getIdentityState(credential.keyHash);
         if (state.keyCount >= state.maxKeys) {
-            throw new Error(`Maximum keys (${state.maxKeys}) already registered for this identity`);
+            throw new VeridexError(VeridexErrorCode.UNAUTHORIZED, `Maximum keys (${state.maxKeys}) already registered for this identity`);
         }
 
         // Check if the new key is already authorized
@@ -2342,11 +2543,11 @@ export class VeridexSDK {
             newCredential.keyHash
         );
         if (isAlreadyAuthorized) {
-            throw new Error('This passkey is already authorized for this identity');
+            throw new VeridexError(VeridexErrorCode.INVALID_ACTION, 'This passkey is already authorized for this identity');
         }
 
         if (!state.identity || state.identity === ethers.ZeroHash) {
-            throw new Error('Identity not registered. Call registerIdentity() first.');
+            throw new VeridexError(VeridexErrorCode.VAULT_NOT_FOUND, 'Identity not registered. Call registerIdentity() first.');
         }
 
         // Nonce for key-management is stored on the *identity* (not necessarily the signing key)
@@ -2361,7 +2562,7 @@ export class VeridexSDK {
         const signature = await this.passkey.sign(ethers.getBytes(packedChallenge));
 
         if (!signer) {
-            throw new Error('Signer required for backup key registration');
+            throw new VeridexError(VeridexErrorCode.INVALID_ACTION, 'Signer required for backup key registration');
         }
 
         // Call Hub contract to add backup key
@@ -2401,18 +2602,18 @@ export class VeridexSDK {
     ): Promise<RemoveKeyResult> {
         const credential = this.passkey.getCredential();
         if (!credential) {
-            throw new Error('No credential set. Call passkey.register() or passkey.setCredential() first.');
+            throw new VeridexError(VeridexErrorCode.NO_CREDENTIAL);
         }
 
         const evmClient = this.chain as any;
         if (typeof evmClient.removeKey !== 'function') {
-            throw new Error('Backup passkey management not supported on this chain client');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Backup passkey management not supported on this chain client');
         }
 
         // Get identity state
         const state = await evmClient.getIdentityState(credential.keyHash);
         if (state.keyCount <= 1) {
-            throw new Error('Cannot remove the last passkey. At least one must remain.');
+            throw new VeridexError(VeridexErrorCode.INVALID_ACTION, 'Cannot remove the last passkey. At least one must remain.');
         }
 
         // Check if the key to remove is actually authorized
@@ -2421,11 +2622,11 @@ export class VeridexSDK {
             keyToRemove
         );
         if (!isAuthorized) {
-            throw new Error('The specified passkey is not authorized for this identity');
+            throw new VeridexError(VeridexErrorCode.UNAUTHORIZED, 'The specified passkey is not authorized for this identity');
         }
 
         if (!state.identity || state.identity === ethers.ZeroHash) {
-            throw new Error('Identity not registered. Call registerIdentity() first.');
+            throw new VeridexError(VeridexErrorCode.VAULT_NOT_FOUND, 'Identity not registered. Call registerIdentity() first.');
         }
 
         // Nonce for key-management is stored on the *identity*
@@ -2475,7 +2676,7 @@ export class VeridexSDK {
 
         const evmClient = this.chain as any;
         if (typeof evmClient.getIdentityState !== 'function') {
-            throw new Error('Identity management not supported on this chain client');
+            throw new VeridexError(VeridexErrorCode.UNSUPPORTED_FEATURE, 'Identity management not supported on this chain client');
         }
 
         const state = await evmClient.getIdentityState(credential.keyHash);

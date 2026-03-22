@@ -513,6 +513,10 @@ export function createSessionStorage(
     
     // Fallback to LocalStorage
     if (typeof localStorage !== 'undefined') {
+        console.warn(
+            '[Veridex SDK] Security advisory: IndexedDB is unavailable; falling back to LocalStorage for session storage. ' +
+            'Both backends encrypt session keys with AES-GCM, but IndexedDB is recommended for production use.',
+        );
         return new LocalStorageSessionStorage(credentialId);
     }
     
