@@ -479,6 +479,15 @@ export type {
     CrossChainProgressCallback,
 } from './core/CrossChainManager.js';
 
+// Wormhole Utilities (VAA parsing, quorum checks, emitter normalization)
+export {
+    parseVAA,
+    parseVAABytes,
+    normalizeEmitterAddress,
+    hasQuorum,
+    validateEmitter,
+} from './wormhole.js';
+
 // Re-export Relayer Client types
 export type {
     RelayStatus,
