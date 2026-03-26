@@ -2,7 +2,6 @@ import { ethers } from 'ethers';
 
 import type { PasskeyCredential, TransferParams, ExecuteParams, BridgeParams } from '../core/types.js';
 import { PasskeyManager } from '../core/PasskeyManager.js';
-import { MAINNET_CHAINS, TESTNET_CHAINS } from '../constants.js';
 import { buildGaslessChallenge, encodeBridgeAction, encodeExecuteAction, encodeTransferAction } from '../payload.js';
 import { queryHubState } from '../queries/hubState.js';
 import { getDefaultHub } from '../presets.js';

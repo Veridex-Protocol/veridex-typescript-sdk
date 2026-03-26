@@ -44,9 +44,6 @@ import { encodeTransferAction, encodeExecuteAction, encodeBridgeAction } from '.
 // Constants
 // ============================================================================
 
-// Starknet felt252 max value is 2^252 - 1
-const FELT252_MAX = BigInt('0x0800000000000000000000000000000000000000000000000000000000000000') - 1n;
-
 // 2^128 for splitting u256 into low/high
 const U128_MAX = BigInt('0x100000000000000000000000000000000');
 
@@ -69,21 +66,6 @@ function toStarknetU256(keyHash: string): [string, string] {
         '0x' + low.toString(16),
         '0x' + high.toString(16)
     ];
-}
-
-/**
- * Truncate a 256-bit keyHash to fit within Starknet's felt252 (252-bit) field.
- * Clears the top 4 bits to ensure the value is < 2^252.
- * 
- * @param keyHash - 256-bit hex string (with or without 0x prefix)
- * @returns felt252-compatible hex string with 0x prefix
- */
-function toStarknetFelt(keyHash: string): string {
-    const cleanHash = keyHash.replace('0x', '');
-    const value = BigInt('0x' + cleanHash);
-    // Mask to felt252 range (clear top 4 bits)
-    const masked = value & FELT252_MAX;
-    return '0x' + masked.toString(16);
 }
 
 // ============================================================================
@@ -441,8 +423,8 @@ export class StarknetClient implements ChainClient {
      * @returns Session validation result with expiry and limits
      */
     async isSessionActive(
-        userKeyHash: string,
-        sessionKeyHash: string
+        _userKeyHash: string,
+        _sessionKeyHash: string
     ): Promise<SessionValidationResult> {
         if (!this.hubRpcUrl || !this.hubContractAddress) {
             throw new Error(
@@ -573,19 +555,6 @@ export class StarknetClient implements ChainClient {
         const xHex = publicKeyX.toString(16).padStart(64, '0');
         const yHex = publicKeyY.toString(16).padStart(64, '0');
         const combined = Buffer.from(xHex + yHex, 'hex');
-        const hash = createHash('sha256').update(combined).digest('hex');
-        return '0x' + hash;
-    }
-
-    private buildMessageHash(keyHash: string, targetChain: number, actionPayload: string, nonce: bigint): string {
-        const keyHashBuffer = Buffer.from(keyHash.replace(/^0x/, ''), 'hex');
-        const targetChainBuffer = Buffer.alloc(2);
-        targetChainBuffer.writeUInt16BE(targetChain);
-        const payloadBuffer = Buffer.from(actionPayload.replace(/^0x/, ''), 'hex');
-        const nonceHex = nonce.toString(16).padStart(64, '0');
-        const nonceBuffer = Buffer.from(nonceHex, 'hex');
-
-        const combined = Buffer.concat([keyHashBuffer, targetChainBuffer, payloadBuffer, nonceBuffer]);
         const hash = createHash('sha256').update(combined).digest('hex');
         return '0x' + hash;
     }

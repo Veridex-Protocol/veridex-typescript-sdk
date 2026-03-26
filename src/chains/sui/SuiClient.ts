@@ -512,7 +512,7 @@ export class SuiClient implements ChainClient {
      * @returns Vault object ID or null if not found
      */
     async getVaultId(
-        ownerKeyHash: string,
+        _ownerKeyHash: string,
         registryObjectId: string
     ): Promise<string | null> {
         try {
@@ -611,7 +611,7 @@ export class SuiClient implements ChainClient {
      * @returns Whether the VAA has been processed
      */
     async isVaaProcessed(
-        vaaHash: string,
+        _vaaHash: string,
         processedVaasObjectId: string
     ): Promise<boolean> {
         try {
