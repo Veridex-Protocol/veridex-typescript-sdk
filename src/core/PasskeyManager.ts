@@ -17,6 +17,7 @@ import type {
 } from '@simplewebauthn/types';
 import { ethers } from 'ethers';
 import { base64URLEncode, base64URLDecode, parseDERSignature, computeKeyHash } from '../utils.js';
+import { buildRelayerApiUrl, normalizeRelayerOrigin } from './relayerUrl.js';
 
 // ============================================================================
 // Types
@@ -153,7 +154,7 @@ export class PasskeyManager {
             timeout: config.timeout ?? 60000,
             userVerification: config.userVerification ?? 'required',
             authenticatorAttachment: config.authenticatorAttachment ?? 'platform',
-            relayerUrl: config.relayerUrl ?? '',
+            relayerUrl: normalizeRelayerOrigin(config.relayerUrl ?? ''),
         };
     }
 
@@ -484,7 +485,7 @@ export class PasskeyManager {
         }
 
         try {
-            const response = await fetch(`${this.config.relayerUrl}/api/v1/credential`, {
+            const response = await fetch(buildRelayerApiUrl(this.config.relayerUrl, '/credential'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -520,7 +521,7 @@ export class PasskeyManager {
 
         try {
             const response = await fetch(
-                `${this.config.relayerUrl}/api/v1/credential/by-id/${encodeURIComponent(credentialId)}`
+                buildRelayerApiUrl(this.config.relayerUrl, `/credential/by-id/${encodeURIComponent(credentialId)}`)
             );
 
             if (!response.ok) {
@@ -566,7 +567,7 @@ export class PasskeyManager {
 
         try {
             const response = await fetch(
-                `${this.config.relayerUrl}/api/v1/credential/${encodeURIComponent(keyHash)}`
+                buildRelayerApiUrl(this.config.relayerUrl, `/credential/${encodeURIComponent(keyHash)}`)
             );
 
             if (!response.ok) {

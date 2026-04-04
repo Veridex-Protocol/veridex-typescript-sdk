@@ -26,6 +26,7 @@
 
 import type { PasskeyCredential } from './PasskeyManager.js';
 import { detectPlatform, type PlatformHint } from './BrowserCapabilities.js';
+import { buildRelayerApiUrl, normalizeRelayerOrigin } from './relayerUrl.js';
 
 // ============================================================================
 // Types
@@ -118,7 +119,7 @@ export class CredentialManager {
     constructor(config: CredentialManagerConfig = {}) {
         this.config = {
             storageKey: config.storageKey ?? DEFAULT_STORAGE_KEY,
-            relayerUrl: config.relayerUrl ?? '',
+            relayerUrl: normalizeRelayerOrigin(config.relayerUrl ?? ''),
         };
     }
 
@@ -293,7 +294,7 @@ export class CredentialManager {
         if (!managed) return false;
 
         try {
-            const response = await fetch(`${this.config.relayerUrl}/api/v1/credential/metadata`, {
+            const response = await fetch(buildRelayerApiUrl(this.config.relayerUrl, '/credential/metadata'), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -322,7 +323,10 @@ export class CredentialManager {
 
         try {
             const response = await fetch(
-                `${this.config.relayerUrl}/api/v1/credential/metadata?keyHash=${encodeURIComponent(keyHash)}`
+                buildRelayerApiUrl(
+                    this.config.relayerUrl,
+                    `/credential/metadata?keyHash=${encodeURIComponent(keyHash)}`
+                )
             );
 
             if (!response.ok) return null;

@@ -11,6 +11,8 @@
  * - Fee estimation
  */
 
+import { buildRelayerApiUrl, normalizeRelayerOrigin } from './relayerUrl.js';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -288,7 +290,7 @@ export class RelayerClient {
     private config: Required<Omit<RelayerClientConfig, 'baseUrl'>>;
 
     constructor(config: RelayerClientConfig) {
-        this.baseUrl = config.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
+        this.baseUrl = normalizeRelayerOrigin(config.baseUrl);
         this.config = { ...DEFAULT_CONFIG, ...config };
     }
 
@@ -625,6 +627,9 @@ export class RelayerClient {
         path: string,
         options: RequestInit = {}
     ): Promise<any> {
+        const resolvedUrl = path.startsWith('/api/v1/')
+            ? buildRelayerApiUrl(this.baseUrl, path.replace(/^\/api\/v1/, ''))
+            : `${this.baseUrl}${path}`;
         const headers: HeadersInit = {
             'Content-Type': 'application/json',
             'User-Agent': `@veridex/sdk/${RelayerClient.SDK_VERSION}`,
@@ -642,7 +647,7 @@ export class RelayerClient {
 
         for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
             try {
-                const response = await fetch(`${this.baseUrl}${path}`, {
+                const response = await fetch(resolvedUrl, {
                     ...options,
                     headers,
                     signal: controller.signal,

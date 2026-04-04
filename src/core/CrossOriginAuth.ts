@@ -46,6 +46,7 @@
  */
 
 import { PasskeyManager, type PasskeyCredential, type WebAuthnSignature } from './PasskeyManager.js';
+import { buildRelayerApiUrl, normalizeRelayerOrigin } from './relayerUrl.js';
 
 // ============================================================================
 // Constants
@@ -59,7 +60,7 @@ export { VERIDEX_RP_ID };
 export const DEFAULT_AUTH_PORTAL_URL = 'https://auth.veridex.network';
 
 /** Default relayer API URL for server-side session tokens */
-export const DEFAULT_RELAYER_URL = 'https://amused-kameko-veridex-demo-37453117.koyeb.app/api/v1';
+export const DEFAULT_RELAYER_URL = 'https://relayer.veridex.network';
 
 /** Message types for postMessage communication */
 export const AUTH_MESSAGE_TYPES = {
@@ -160,7 +161,7 @@ export class CrossOriginAuth {
         this.config = {
             rpId: config.rpId ?? VERIDEX_RP_ID,
             authPortalUrl: config.authPortalUrl ?? DEFAULT_AUTH_PORTAL_URL,
-            relayerUrl: config.relayerUrl ?? DEFAULT_RELAYER_URL,
+            relayerUrl: normalizeRelayerOrigin(config.relayerUrl ?? DEFAULT_RELAYER_URL),
             mode: config.mode ?? 'popup',
             popupFeatures: config.popupFeatures ?? 'width=500,height=600,left=100,top=100',
             timeout: config.timeout ?? 120000, // 2 minutes
@@ -253,6 +254,9 @@ export class CrossOriginAuth {
     async connectWithVeridex(options?: {
         sessionChallengeId?: string;
         sessionChallenge?: string;
+        register?: boolean;
+        username?: string;
+        displayName?: string;
     }): Promise<CrossOriginSession> {
         if (this.config.mode === 'popup') {
             return this.authenticateViaPopup(options);
@@ -267,6 +271,9 @@ export class CrossOriginAuth {
     private async authenticateViaPopup(options?: {
         sessionChallengeId?: string;
         sessionChallenge?: string;
+        register?: boolean;
+        username?: string;
+        displayName?: string;
     }): Promise<CrossOriginSession> {
         return new Promise((resolve, reject) => {
             const state = this.generateState();
@@ -279,6 +286,15 @@ export class CrossOriginAuth {
             }
             if (options?.sessionChallenge) {
                 authUrl.searchParams.set('challenge', options.sessionChallenge);
+            }
+            if (options?.register) {
+                authUrl.searchParams.set('register', 'true');
+            }
+            if (options?.username) {
+                authUrl.searchParams.set('username', options.username);
+            }
+            if (options?.displayName) {
+                authUrl.searchParams.set('display_name', options.displayName);
             }
 
             // Open popup
@@ -334,6 +350,9 @@ export class CrossOriginAuth {
     private async initiateRedirectAuth(options?: {
         sessionChallengeId?: string;
         sessionChallenge?: string;
+        register?: boolean;
+        username?: string;
+        displayName?: string;
     }): Promise<CrossOriginSession> {
         const state = this.generateState();
 
@@ -350,6 +369,15 @@ export class CrossOriginAuth {
         }
         if (options?.sessionChallenge) {
             authUrl.searchParams.set('challenge', options.sessionChallenge);
+        }
+        if (options?.register) {
+            authUrl.searchParams.set('register', 'true');
+        }
+        if (options?.username) {
+            authUrl.searchParams.set('username', options.username);
+        }
+        if (options?.displayName) {
+            authUrl.searchParams.set('display_name', options.displayName);
         }
 
         // Redirect - this will not resolve, page navigates away
@@ -425,7 +453,8 @@ export class CrossOriginAuth {
         permissions?: string[];
         expiresInMs?: number;
     }): Promise<ServerSessionChallenge> {
-        const response = await fetch(`${this.config.relayerUrl}/session/challenge`, {
+        const challengeUrl = buildRelayerApiUrl(this.config.relayerUrl, '/session/challenge');
+        const response = await fetch(challengeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -478,7 +507,7 @@ export class CrossOriginAuth {
             throw new Error('Session must include a relayer-issued serverChallengeId');
         }
 
-        const response = await fetch(`${this.config.relayerUrl}/session/create`, {
+        const response = await fetch(buildRelayerApiUrl(this.config.relayerUrl, '/session/create'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -504,7 +533,9 @@ export class CrossOriginAuth {
      * Returns the session details if valid, null if expired/revoked.
      */
     async validateServerSession(sessionId: string): Promise<ServerSessionToken | null> {
-        const response = await fetch(`${this.config.relayerUrl}/session/${encodeURIComponent(sessionId)}`);
+        const response = await fetch(
+            buildRelayerApiUrl(this.config.relayerUrl, `/session/${encodeURIComponent(sessionId)}`)
+        );
 
         if (!response.ok) {
             return null;
@@ -522,9 +553,12 @@ export class CrossOriginAuth {
      * Revoke a server session token.
      */
     async revokeServerSession(sessionId: string): Promise<boolean> {
-        const response = await fetch(`${this.config.relayerUrl}/session/${encodeURIComponent(sessionId)}`, {
+        const response = await fetch(
+            buildRelayerApiUrl(this.config.relayerUrl, `/session/${encodeURIComponent(sessionId)}`),
+            {
             method: 'DELETE',
-        });
+            }
+        );
         return response.ok;
     }
 
