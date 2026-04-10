@@ -243,6 +243,21 @@ describe('SessionManager', () => {
             
             newManager.dispose();
         });
+
+                    it('should keep multiple sessions and allow selecting one explicitly', async () => {
+                        const firstSession = await sessionManager.createSession({ maxValue: 10n });
+                        const secondSession = await sessionManager.createSession({ maxValue: 20n });
+
+                        const storedSessions = await sessionManager.listSessions();
+                        expect(storedSessions.map((session) => session.keyHash)).toEqual(
+                            expect.arrayContaining([firstSession.keyHash, secondSession.keyHash])
+                        );
+
+                        const selectedSession = await sessionManager.selectSession(firstSession.keyHash);
+                        expect(selectedSession.keyHash).toBe(firstSession.keyHash);
+                        expect(selectedSession.maxValue).toBe(10n);
+                        expect(sessionManager.getSession()?.keyHash).toBe(firstSession.keyHash);
+                    });
     });
     
     // ========================================================================
@@ -460,6 +475,19 @@ describe('SessionManager', () => {
             
             newManager.dispose();
         });
+
+                    it('should revoke only the targeted session and keep the others', async () => {
+                        const firstSession = await sessionManager.createSession({ maxValue: 10n });
+                        const secondSession = await sessionManager.createSession({ maxValue: 20n });
+
+                        await sessionManager.revokeSession(firstSession.keyHash);
+
+                        const remainingSessions = await sessionManager.listSessions();
+                        expect(remainingSessions.map((session) => session.keyHash)).toEqual([secondSession.keyHash]);
+                        expect(mockHub.registeredSessions.has(firstSession.keyHash)).toBe(false);
+                        expect(mockHub.registeredSessions.has(secondSession.keyHash)).toBe(true);
+                        expect(sessionManager.getSession()?.keyHash).toBe(secondSession.keyHash);
+                    });
         
         it('should throw if no active session to revoke', async () => {
             await expect(
@@ -471,6 +499,14 @@ describe('SessionManager', () => {
             } catch (error) {
                 expect((error as SessionError).code).toBe(SessionErrorCode.NO_ACTIVE_SESSION);
             }
+        });
+
+        it('should throw SESSION_NOT_FOUND when revoking an unknown stored session', async () => {
+            await sessionManager.createSession();
+
+            await expect(
+                sessionManager.revokeSession(ethers.ZeroHash)
+            ).rejects.toMatchObject({ code: SessionErrorCode.SESSION_NOT_FOUND });
         });
     });
 

@@ -138,9 +138,19 @@ export interface SessionStorage {
     save(session: SessionKey): Promise<void>;
     
     /**
-     * Load the active session (private key will be decrypted)
+     * Load a session by key hash, or the most recent valid session when omitted
      */
-    load(): Promise<SessionKey | null>;
+    load(keyHash?: string): Promise<SessionKey | null>;
+
+    /**
+     * Load every valid stored session for this credential
+     */
+    loadAll(): Promise<SessionKey[]>;
+
+    /**
+     * Remove a specific session from storage
+     */
+    remove(keyHash: string): Promise<void>;
     
     /**
      * Clear all stored sessions
@@ -150,7 +160,7 @@ export interface SessionStorage {
     /**
      * Check if a session exists
      */
-    exists(): Promise<boolean>;
+    exists(keyHash?: string): Promise<boolean>;
 }
 
 // ============================================================================
@@ -211,6 +221,7 @@ export class SessionError extends Error {
 
 export enum SessionErrorCode {
     NO_ACTIVE_SESSION = 'NO_ACTIVE_SESSION',
+    SESSION_NOT_FOUND = 'SESSION_NOT_FOUND',
     SESSION_EXPIRED = 'SESSION_EXPIRED',
     VALUE_EXCEEDS_LIMIT = 'VALUE_EXCEEDS_LIMIT',
     CHAIN_NOT_ALLOWED = 'CHAIN_NOT_ALLOWED',

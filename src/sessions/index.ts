@@ -139,6 +139,16 @@ class SessionManager {
                 managerConfig?.storageBackend
             );
     }
+
+    private resolveConfig(configOverride?: Partial<SessionConfig>): Required<SessionConfig> {
+        const resolvedConfig: Required<SessionConfig> = {
+            ...this.config,
+            ...configOverride,
+        };
+
+        validateSessionConfig(resolvedConfig);
+        return resolvedConfig;
+    }
     
     // ========================================================================
     // Session Lifecycle
@@ -157,9 +167,10 @@ class SessionManager {
      * @returns Created session key
      * @throws SessionError if registration fails
      */
-    async createSession(): Promise<SessionKey> {
+    async createSession(configOverride?: Partial<SessionConfig>): Promise<SessionKey> {
         try {
             this.log('Creating new session...');
+            const sessionConfig = this.resolveConfig(configOverride);
             
             // 1. Generate ephemeral key pair
             const keyPair = generateSecp256k1KeyPair();
@@ -170,7 +181,7 @@ class SessionManager {
             // 2. Prepare challenge for Passkey signing
             const challenge = ethers.solidityPacked(
                 ['string', 'bytes32', 'uint256', 'uint256'],
-                ['registerSession', keyHash, this.config.duration, this.config.maxValue]
+                ['registerSession', keyHash, sessionConfig.duration, sessionConfig.maxValue]
             );
             
             this.log('Challenge prepared, requesting Passkey signature...');
@@ -186,8 +197,8 @@ class SessionManager {
                 publicKeyX: this.credential.publicKeyX,
                 publicKeyY: this.credential.publicKeyY,
                 sessionKeyHash: keyHash,
-                duration: this.config.duration,
-                maxValue: this.config.maxValue,
+                duration: sessionConfig.duration,
+                maxValue: sessionConfig.maxValue,
                 requireUV: true,
             };
             
@@ -196,15 +207,15 @@ class SessionManager {
             this.log('Session registered on Hub');
             
             // 5. Create session object
-            const expiry = Date.now() + this.config.duration * 1000;
+            const expiry = Date.now() + sessionConfig.duration * 1000;
             
             this.currentSession = {
                 publicKey: keyPair.publicKey,
                 privateKey: keyPair.privateKey,
                 keyHash,
                 expiry,
-                maxValue: this.config.maxValue,
-                chainScopes: this.config.chainScopes,
+                maxValue: sessionConfig.maxValue,
+                chainScopes: sessionConfig.chainScopes,
                 userKeyHash: this.credential.keyHash,
             };
             
@@ -242,14 +253,17 @@ class SessionManager {
      * 
      * @returns Loaded session or null if no valid session exists
      */
-    async loadSession(): Promise<SessionKey | null> {
+    async loadSession(keyHash?: string): Promise<SessionKey | null> {
         try {
-            this.log('Loading session from storage...');
+            this.log('Loading session from storage...', keyHash ?? 'latest');
             
-            const session = await this.storage.load();
+            const session = await this.storage.load(keyHash);
             
             if (!session) {
                 this.log('No session found in storage');
+                if (!keyHash) {
+                    this.currentSession = null;
+                }
                 return null;
             }
             
@@ -274,9 +288,28 @@ class SessionManager {
             
         } catch (error) {
             this.log('Failed to load session:', error);
-            await this.storage.clear();
+            if (!keyHash) {
+                await this.storage.clear();
+            }
             return null;
         }
+    }
+
+    async listSessions(): Promise<SessionKey[]> {
+        return this.storage.loadAll();
+    }
+
+    async selectSession(keyHash: string): Promise<SessionKey> {
+        const session = await this.loadSession(keyHash);
+
+        if (!session) {
+            throw new SessionError(
+                `Session ${keyHash} not found`,
+                SessionErrorCode.SESSION_NOT_FOUND,
+            );
+        }
+
+        return session;
     }
     
     /**
@@ -284,21 +317,27 @@ class SessionManager {
      * 
      * @throws SessionError if no active session or revocation fails
      */
-    async revokeSession(): Promise<void> {
-        if (!this.currentSession) {
+    async revokeSession(keyHash?: string): Promise<void> {
+        const targetSession = keyHash
+            ? await this.storage.load(keyHash)
+            : this.currentSession;
+
+        if (!targetSession) {
             throw new SessionError(
-                'No active session to revoke',
-                SessionErrorCode.NO_ACTIVE_SESSION
+                keyHash
+                    ? `Session ${keyHash} not found`
+                    : 'No active session to revoke',
+                keyHash ? SessionErrorCode.SESSION_NOT_FOUND : SessionErrorCode.NO_ACTIVE_SESSION
             );
         }
         
         try {
-            this.log('Revoking session:', this.currentSession.keyHash);
+            this.log('Revoking session:', targetSession.keyHash);
             
             // 1. Prepare challenge for revocation
             const challenge = ethers.solidityPacked(
                 ['string', 'bytes32'],
-                ['revokeSession', this.currentSession.keyHash]
+                ['revokeSession', targetSession.keyHash]
             );
             
             // 2. Sign with Passkey (biometric prompt)
@@ -311,7 +350,7 @@ class SessionManager {
                 signature,
                 publicKeyX: this.credential.publicKeyX,
                 publicKeyY: this.credential.publicKeyY,
-                sessionKeyHash: this.currentSession.keyHash,
+                sessionKeyHash: targetSession.keyHash,
                 requireUV: true,
             };
             
@@ -319,17 +358,24 @@ class SessionManager {
             
             this.log('Session revoked on Hub');
             
-            // 4. Clear local storage
-            await this.storage.clear();
-            
-            // 5. Cancel refresh timer
-            if (this.refreshTimer) {
-                clearTimeout(this.refreshTimer);
-                this.refreshTimer = null;
+            // 4. Remove only the revoked session from local storage
+            await this.storage.remove(targetSession.keyHash);
+
+            const revokedKeyHash = targetSession.keyHash;
+            const revokedCurrentSession = this.currentSession?.keyHash === revokedKeyHash;
+
+            // 5. Update active session selection
+            if (revokedCurrentSession) {
+                if (this.refreshTimer) {
+                    clearTimeout(this.refreshTimer);
+                    this.refreshTimer = null;
+                }
+
+                this.currentSession = await this.storage.load();
+                if (this.currentSession && this.config.autoRefresh) {
+                    this.scheduleRefresh();
+                }
             }
-            
-            const revokedKeyHash = this.currentSession.keyHash;
-            this.currentSession = null;
             
             // 6. Emit event
             this.emit({ type: 'session-revoked', keyHash: revokedKeyHash });
@@ -428,39 +474,45 @@ class SessionManager {
      * @returns Session signature
      * @throws SessionError if no active session, expired, or value exceeds limit
      */
-    async signWithSession(action: ActionParams): Promise<SessionSignature> {
-        if (!this.currentSession) {
+    async signWithSession(action: ActionParams, keyHash?: string): Promise<SessionSignature> {
+        const session = keyHash
+            ? await this.storage.load(keyHash)
+            : this.currentSession;
+
+        if (!session) {
             throw new SessionError(
-                'No active session available',
-                SessionErrorCode.NO_ACTIVE_SESSION
+                keyHash
+                    ? `Session ${keyHash} not found`
+                    : 'No active session available',
+                keyHash ? SessionErrorCode.SESSION_NOT_FOUND : SessionErrorCode.NO_ACTIVE_SESSION
             );
         }
         
         const now = Date.now();
-        if (now >= this.currentSession.expiry) {
-            this.emit({ type: 'session-expired', keyHash: this.currentSession.keyHash });
+        if (now >= session.expiry) {
+            this.emit({ type: 'session-expired', keyHash: session.keyHash });
             throw new SessionError(
                 'Session has expired',
                 SessionErrorCode.SESSION_EXPIRED
             );
         }
         
-        if (this.currentSession.maxValue > 0n && action.value > this.currentSession.maxValue) {
+        if (session.maxValue > 0n && action.value > session.maxValue) {
             throw new SessionError(
-                `Transaction value (${action.value}) exceeds session limit (${this.currentSession.maxValue})`,
+                `Transaction value (${action.value}) exceeds session limit (${session.maxValue})`,
                 SessionErrorCode.VALUE_EXCEEDS_LIMIT,
-                { value: action.value, limit: this.currentSession.maxValue }
+                { value: action.value, limit: session.maxValue }
             );
         }
         
         if (
-            this.currentSession.chainScopes.length > 0 &&
-            !this.currentSession.chainScopes.includes(action.targetChain)
+            session.chainScopes.length > 0 &&
+            !session.chainScopes.includes(action.targetChain)
         ) {
             throw new SessionError(
                 `Chain ${action.targetChain} not in session scope`,
                 SessionErrorCode.CHAIN_NOT_ALLOWED,
-                { chain: action.targetChain, allowedChains: this.currentSession.chainScopes }
+                { chain: action.targetChain, allowedChains: session.chainScopes }
             );
         }
         
@@ -468,14 +520,14 @@ class SessionManager {
         
         const messageHash = hashAction(action);
         const { signature } = signWithSessionKey(
-            this.currentSession.privateKey,
+            session.privateKey,
             messageHash
         );
         
         const sessionSignature: SessionSignature = {
             signature,
-            sessionKeyHash: this.currentSession.keyHash,
-            userKeyHash: this.currentSession.userKeyHash,
+            sessionKeyHash: session.keyHash,
+            userKeyHash: session.userKeyHash,
             timestamp: now,
             nonce: action.nonce,
         };
@@ -491,8 +543,8 @@ class SessionManager {
      * @param action Action parameters
      * @returns Session-signed action ready for submission
      */
-    async signAction(action: ActionParams): Promise<SessionSignedAction> {
-        const signature = await this.signWithSession(action);
+    async signAction(action: ActionParams, keyHash?: string): Promise<SessionSignedAction> {
+        const signature = await this.signWithSession(action, keyHash);
         
         return {
             action,

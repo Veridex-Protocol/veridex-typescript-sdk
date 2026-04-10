@@ -16,6 +16,17 @@ import type { SessionKey, SessionStorage } from './types.js';
 import { SessionError, SessionErrorCode } from './types.js';
 import { encrypt, decrypt, deriveEncryptionKey } from './crypto.js';
 
+interface StoredSessionRecord {
+    keyHash: string;
+    publicKey: number[] | string;
+    encryptedPrivateKey: number[] | string;
+    expiry: number;
+    maxValue: string;
+    chainScopes?: number[];
+    userKeyHash: string;
+    savedAt: number;
+}
+
 // ============================================================================
 // IndexedDB Session Storage (Preferred)
 // ============================================================================
@@ -160,11 +171,39 @@ export class IndexedDBSessionStorage implements SessionStorage {
             );
         }
     }
+
+    private async decryptSession(stored: StoredSessionRecord): Promise<SessionKey> {
+        const key = await this.getEncryptionKey();
+        const encryptedPrivateKey = new Uint8Array(stored.encryptedPrivateKey as number[]);
+        const privateKey = await decrypt(encryptedPrivateKey, key);
+
+        return {
+            keyHash: stored.keyHash,
+            publicKey: new Uint8Array(stored.publicKey as number[]),
+            privateKey,
+            expiry: stored.expiry,
+            maxValue: BigInt(stored.maxValue),
+            chainScopes: stored.chainScopes ?? [],
+            userKeyHash: stored.userKeyHash,
+        };
+    }
+
+    private async pruneExpiredSessions(records: StoredSessionRecord[]): Promise<StoredSessionRecord[]> {
+        const now = Date.now();
+        const validRecords = records.filter((record) => record.expiry > now);
+        const expiredRecords = records.filter((record) => record.expiry <= now);
+
+        if (expiredRecords.length > 0) {
+            await Promise.all(expiredRecords.map((record) => this.remove(record.keyHash)));
+        }
+
+        return validRecords.sort((left, right) => right.savedAt - left.savedAt);
+    }
     
     /**
-     * Load the active session (decrypts private key)
+     * Load a session (decrypts private key)
      */
-    async load(): Promise<SessionKey | null> {
+    async load(keyHash?: string): Promise<SessionKey | null> {
         try {
             await this.initialize();
             
@@ -172,46 +211,17 @@ export class IndexedDBSessionStorage implements SessionStorage {
                 throw new Error('Database not initialized');
             }
             
-            // Get all sessions
-            const allSessions = await this.getAllSessions();
-            
-            if (allSessions.length === 0) {
-                return null;
-            }
-            
-            // Find the most recent non-expired session
-            const now = Date.now();
-            const validSessions = allSessions
-                .filter(s => s.expiry > now)
-                .sort((a, b) => b.savedAt - a.savedAt);
-            
+            const sessions = keyHash
+                ? await this.getSessionByKeyHash(keyHash)
+                : await this.getAllSessions();
+
+            const validSessions = await this.pruneExpiredSessions(sessions);
+
             if (validSessions.length === 0) {
-                // All sessions expired, clean up
-                await this.clear();
                 return null;
             }
-            
-            const stored = validSessions[0];
-            
-            // Get encryption key
-            const key = await this.getEncryptionKey();
-            
-            // Decrypt private key
-            const encryptedPrivateKey = new Uint8Array(stored.encryptedPrivateKey);
-            const privateKey = await decrypt(encryptedPrivateKey, key);
-            
-            // Reconstruct session
-            const session: SessionKey = {
-                keyHash: stored.keyHash,
-                publicKey: new Uint8Array(stored.publicKey),
-                privateKey,
-                expiry: stored.expiry,
-                maxValue: BigInt(stored.maxValue),
-                chainScopes: stored.chainScopes,
-                userKeyHash: stored.userKeyHash,
-            };
-            
-            return session;
+
+            return this.decryptSession(validSessions[0]);
         } catch (error) {
             if (error instanceof SessionError) {
                 throw error;
@@ -246,6 +256,85 @@ export class IndexedDBSessionStorage implements SessionStorage {
                 ));
             };
         });
+    }
+
+    private async getSessionByKeyHash(keyHash: string): Promise<StoredSessionRecord[]> {
+        if (!this.db) {
+            return [];
+        }
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.get(keyHash);
+
+            request.onsuccess = () => {
+                resolve(request.result ? [request.result] : []);
+            };
+            request.onerror = () => {
+                reject(new SessionError(
+                    'Failed to get session',
+                    SessionErrorCode.STORAGE_ERROR,
+                    request.error
+                ));
+            };
+        });
+    }
+
+    async loadAll(): Promise<SessionKey[]> {
+        try {
+            await this.initialize();
+
+            if (!this.db) {
+                return [];
+            }
+
+            const records = await this.pruneExpiredSessions(await this.getAllSessions());
+            return Promise.all(records.map((record) => this.decryptSession(record)));
+        } catch (error) {
+            if (error instanceof SessionError) {
+                throw error;
+            }
+            throw new SessionError(
+                'Failed to load sessions',
+                SessionErrorCode.STORAGE_ERROR,
+                error
+            );
+        }
+    }
+
+    async remove(keyHash: string): Promise<void> {
+        try {
+            await this.initialize();
+
+            if (!this.db) {
+                return;
+            }
+
+            return new Promise((resolve, reject) => {
+                const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.delete(keyHash);
+
+                request.onsuccess = () => resolve();
+                request.onerror = () => {
+                    reject(new SessionError(
+                        'Failed to remove session',
+                        SessionErrorCode.STORAGE_ERROR,
+                        request.error
+                    ));
+                };
+            });
+        } catch (error) {
+            if (error instanceof SessionError) {
+                throw error;
+            }
+            throw new SessionError(
+                'Failed to remove session',
+                SessionErrorCode.STORAGE_ERROR,
+                error
+            );
+        }
     }
     
     /**
@@ -288,16 +377,9 @@ export class IndexedDBSessionStorage implements SessionStorage {
     /**
      * Check if any session exists
      */
-    async exists(): Promise<boolean> {
+    async exists(keyHash?: string): Promise<boolean> {
         try {
-            await this.initialize();
-            
-            if (!this.db) {
-                return false;
-            }
-            
-            const sessions = await this.getAllSessions();
-            return sessions.length > 0;
+            return (await this.load(keyHash)) !== null;
         } catch {
             return false;
         }
@@ -334,7 +416,8 @@ const STORAGE_KEY_PREFIX = 'veridex-session-';
 export class LocalStorageSessionStorage implements SessionStorage {
     private encryptionKey: CryptoKey | null = null;
     private credentialId: string;
-    private storageKey: string;
+    private credentialHash: string;
+    private legacyStorageKey: string;
     
     /**
      * @param credentialId User's Passkey credential ID (for key derivation)
@@ -347,7 +430,78 @@ export class LocalStorageSessionStorage implements SessionStorage {
             );
         }
         this.credentialId = credentialId;
-        this.storageKey = STORAGE_KEY_PREFIX + ethers.keccak256(ethers.toUtf8Bytes(credentialId));
+        this.credentialHash = ethers.keccak256(ethers.toUtf8Bytes(credentialId));
+        this.legacyStorageKey = STORAGE_KEY_PREFIX + this.credentialHash;
+    }
+
+    private getSessionStorageKey(keyHash: string): string {
+        return `${STORAGE_KEY_PREFIX}${this.credentialHash}:${keyHash}`;
+    }
+
+    private getSessionStoragePrefix(): string {
+        return `${STORAGE_KEY_PREFIX}${this.credentialHash}:`;
+    }
+
+    private async deserializeSession(stored: StoredSessionRecord): Promise<SessionKey> {
+        const key = await this.getEncryptionKey();
+        const encryptedPrivateKey = typeof stored.encryptedPrivateKey === 'string'
+            ? ethers.getBytes(stored.encryptedPrivateKey)
+            : new Uint8Array(stored.encryptedPrivateKey);
+        const privateKey = await decrypt(encryptedPrivateKey, key);
+
+        return {
+            keyHash: stored.keyHash,
+            publicKey: typeof stored.publicKey === 'string'
+                ? ethers.getBytes(stored.publicKey)
+                : new Uint8Array(stored.publicKey),
+            privateKey,
+            expiry: stored.expiry,
+            maxValue: BigInt(stored.maxValue),
+            chainScopes: stored.chainScopes ?? [],
+            userKeyHash: stored.userKeyHash,
+        };
+    }
+
+    private getRawRecords(): StoredSessionRecord[] {
+        const records: StoredSessionRecord[] = [];
+        const prefix = this.getSessionStoragePrefix();
+
+        for (let index = 0; index < localStorage.length; index++) {
+            const key = localStorage.key(index);
+            if (!key || !key.startsWith(prefix)) {
+                continue;
+            }
+
+            const value = localStorage.getItem(key);
+            if (!value) {
+                continue;
+            }
+
+            records.push(JSON.parse(value) as StoredSessionRecord);
+        }
+
+        const legacyValue = localStorage.getItem(this.legacyStorageKey);
+        if (legacyValue) {
+            records.push(JSON.parse(legacyValue) as StoredSessionRecord);
+        }
+
+        return records;
+    }
+
+    private async getValidRecords(): Promise<StoredSessionRecord[]> {
+        const now = Date.now();
+        const validRecords: StoredSessionRecord[] = [];
+
+        for (const record of this.getRawRecords()) {
+            if (record.expiry <= now) {
+                await this.remove(record.keyHash);
+                continue;
+            }
+
+            validRecords.push(record);
+        }
+
+        return validRecords.sort((left, right) => right.savedAt - left.savedAt);
     }
     
     /**
@@ -386,7 +540,7 @@ export class LocalStorageSessionStorage implements SessionStorage {
             };
             
             // Store as JSON
-            localStorage.setItem(this.storageKey, JSON.stringify(storageObject));
+            localStorage.setItem(this.getSessionStorageKey(session.keyHash), JSON.stringify(storageObject));
         } catch (error) {
             if (error instanceof SessionError) {
                 throw error;
@@ -400,43 +554,19 @@ export class LocalStorageSessionStorage implements SessionStorage {
     }
     
     /**
-     * Load the active session (decrypts private key)
+     * Load a session (decrypts private key)
      */
-    async load(): Promise<SessionKey | null> {
+    async load(keyHash?: string): Promise<SessionKey | null> {
         try {
-            const data = localStorage.getItem(this.storageKey);
-            
-            if (!data) {
+            const records = keyHash
+                ? (await this.getValidRecords()).filter((record) => record.keyHash === keyHash)
+                : await this.getValidRecords();
+
+            if (records.length === 0) {
                 return null;
             }
-            
-            const stored = JSON.parse(data);
-            
-            // Check if expired
-            if (stored.expiry <= Date.now()) {
-                await this.clear();
-                return null;
-            }
-            
-            // Get encryption key
-            const key = await this.getEncryptionKey();
-            
-            // Decrypt private key
-            const encryptedPrivateKey = ethers.getBytes(stored.encryptedPrivateKey);
-            const privateKey = await decrypt(encryptedPrivateKey, key);
-            
-            // Reconstruct session
-            const session: SessionKey = {
-                keyHash: stored.keyHash,
-                publicKey: ethers.getBytes(stored.publicKey),
-                privateKey,
-                expiry: stored.expiry,
-                maxValue: BigInt(stored.maxValue),
-                chainScopes: stored.chainScopes,
-                userKeyHash: stored.userKeyHash,
-            };
-            
-            return session;
+
+            return this.deserializeSession(records[0]);
         } catch (error) {
             // Clear corrupted data
             await this.clear();
@@ -451,13 +581,62 @@ export class LocalStorageSessionStorage implements SessionStorage {
             );
         }
     }
+
+    async loadAll(): Promise<SessionKey[]> {
+        try {
+            const records = await this.getValidRecords();
+            return Promise.all(records.map((record) => this.deserializeSession(record)));
+        } catch (error) {
+            await this.clear();
+
+            if (error instanceof SessionError) {
+                throw error;
+            }
+            throw new SessionError(
+                'Failed to load sessions',
+                SessionErrorCode.STORAGE_ERROR,
+                error
+            );
+        }
+    }
+
+    async remove(keyHash: string): Promise<void> {
+        try {
+            localStorage.removeItem(this.getSessionStorageKey(keyHash));
+
+            const legacyValue = localStorage.getItem(this.legacyStorageKey);
+            if (legacyValue) {
+                const legacyRecord = JSON.parse(legacyValue) as StoredSessionRecord;
+                if (legacyRecord.keyHash === keyHash) {
+                    localStorage.removeItem(this.legacyStorageKey);
+                }
+            }
+        } catch (error) {
+            throw new SessionError(
+                'Failed to remove session',
+                SessionErrorCode.STORAGE_ERROR,
+                error
+            );
+        }
+    }
     
     /**
      * Clear all sessions
      */
     async clear(): Promise<void> {
         try {
-            localStorage.removeItem(this.storageKey);
+            const keysToRemove: string[] = [];
+            const prefix = this.getSessionStoragePrefix();
+
+            for (let index = 0; index < localStorage.length; index++) {
+                const key = localStorage.key(index);
+                if (key && key.startsWith(prefix)) {
+                    keysToRemove.push(key);
+                }
+            }
+
+            keysToRemove.forEach((key) => localStorage.removeItem(key));
+            localStorage.removeItem(this.legacyStorageKey);
         } catch (error) {
             throw new SessionError(
                 'Failed to clear sessions',
@@ -470,9 +649,9 @@ export class LocalStorageSessionStorage implements SessionStorage {
     /**
      * Check if any session exists
      */
-    async exists(): Promise<boolean> {
+    async exists(keyHash?: string): Promise<boolean> {
         try {
-            return localStorage.getItem(this.storageKey) !== null;
+            return (await this.load(keyHash)) !== null;
         } catch {
             return false;
         }
