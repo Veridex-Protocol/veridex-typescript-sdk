@@ -720,7 +720,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       name: 'Starknet Sepolia',
       chainId: 0,
       wormholeChainId: 50001, // Custom bridge (non-Wormhole)
-      rpcUrl: 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/YOUR_ALCHEMY_KEY_HERE',
+      rpcUrl: 'https://starknet-sepolia-rpc.publicnode.com',
       explorerUrl: 'https://sepolia.starkscan.co',
       isEvm: false,
       contracts: {
@@ -818,11 +818,62 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
 };
 
 // ============================================================================
+// Custom RPC URL Overrides
+// ============================================================================
+
+/**
+ * Global RPC URL overrides. Set once at app startup to avoid passing
+ * custom URLs to every SDK / client constructor.
+ *
+ * @example
+ * ```typescript
+ * import { configureDefaultRpcUrls } from '@veridex/sdk';
+ *
+ * configureDefaultRpcUrls({
+ *   starknet: { testnet: 'https://my-starknet-rpc.example.com' },
+ *   base:     { mainnet: 'https://my-base-mainnet.example.com' },
+ * });
+ * ```
+ */
+const _rpcOverrides: Partial<Record<ChainName, Partial<Record<NetworkType, string>>>> = {};
+
+/**
+ * Configure global default RPC URL overrides.
+ * These take precedence over the built-in public endpoints but are
+ * themselves overridden by per-SDK `rpcUrl` / `rpcUrls` options.
+ *
+ * Call with an empty object to clear all overrides.
+ */
+export function configureDefaultRpcUrls(
+  overrides: Partial<Record<ChainName, Partial<Record<NetworkType, string>>>>
+): void {
+  // Clear existing overrides
+  for (const key of Object.keys(_rpcOverrides) as ChainName[]) {
+    delete _rpcOverrides[key];
+  }
+  // Apply new overrides
+  Object.assign(_rpcOverrides, overrides);
+}
+
+/**
+ * Get the current global RPC URL override for a chain + network, if any.
+ */
+export function getRpcUrlOverride(
+  chain: ChainName,
+  network: NetworkType
+): string | undefined {
+  return _rpcOverrides[chain]?.[network];
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
 /**
- * Get chain configuration by name and network
+ * Get chain configuration by name and network.
+ *
+ * Returns a copy of the built-in config with any global RPC override applied.
+ * Per-SDK overrides (`rpcUrl`, `rpcUrls`) still take priority in the factory.
  */
 export function getChainConfig(
   chain: ChainName,
@@ -834,7 +885,12 @@ export function getChainConfig(
       `Unknown chain: "${chain}". Supported chains: ${Object.keys(CHAIN_PRESETS).join(', ')}`
     );
   }
-  return preset[network];
+  const config = preset[network];
+  const rpcOverride = getRpcUrlOverride(chain, network);
+  if (rpcOverride) {
+    return { ...config, rpcUrl: rpcOverride };
+  }
+  return config;
 }
 
 /**

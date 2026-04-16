@@ -70,6 +70,10 @@ export {
     isHubChain,
     getDefaultHub,
 
+    // RPC URL overrides
+    configureDefaultRpcUrls,
+    getRpcUrlOverride,
+
     // Feature Flags
     getFeatureFlags,
     setFeatureFlags,

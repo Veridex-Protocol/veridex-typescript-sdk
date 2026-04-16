@@ -75,7 +75,7 @@ export const WORMHOLE_CHAIN_IDS = {
     SOLANA_DEVNET: 1,
     GOERLI: 2,
     BSC_TESTNET: 4,
-    POLYGON_MUMBAI: 5,
+    POLYGON_AMOY: 10007,
     AVALANCHE_FUJI: 6,
     FANTOM_TESTNET: 10,
     CELO_ALFAJORES: 14,
@@ -138,7 +138,7 @@ export const WORMHOLE_CHAIN_IDS_FLAT = {
   SOLANA_DEVNET: 1,
   GOERLI: 2,
   BSC_TESTNET: 4,
-  POLYGON_MUMBAI: 5,
+  POLYGON_AMOY: 10007,
   AVALANCHE_FUJI: 6,
   FANTOM_TESTNET: 10,
   CELO_ALFAJORES: 14,
@@ -162,13 +162,13 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     name: 'Base Sepolia',
     chainId: 84532,
     wormholeChainId: 10004,
-    rpcUrl: 'https://sepolia.base.org', // Public CORS-friendly RPC
+    rpcUrl: 'https://sepolia.base.org',
     explorerUrl: 'https://sepolia.basescan.org',
     isEvm: true,
     contracts: {
-      hub: '0x23a39c294891703146c3607e1FEEB5Fe78F7F28d',
-      vaultFactory: '0x31e8dc9428575334739754Ab2bdB0E8b9Dc707FD',
-      vaultImplementation: '0xD65E996CD6d5B01689dc54ad30B51f1D88a100f5',
+      hub: '0xD5D29b6EaeE6FF4b765e704298a7e48D22607059',
+      vaultFactory: '0xb25b73D5FeD5693dcd1Bb78f8e33387B59A022EC',
+      vaultImplementation: '0x2CB8397df988c1880d9e5cFfF65bfC22D7D90EE6',
       wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
       tokenBridge: '0x86F55A04690fd7815A3D802bD587e83eA888B239',
     },
@@ -181,8 +181,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.etherscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0x52a6dc19C11b3B53B434Fc7f6D31F8b62ed18F0a',
-      vaultImplementation: '0xfab72dd1fd3AD79f738B49506f32251B60c95f01',
+      vaultFactory: '0x265c10763B4d16AD970bC3d7670c645e37f63AF4',
+      vaultImplementation: '0x942426C94652ebC48f4f404928016B95ADb1DA25',
       wormholeCoreBridge: '0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78',
       tokenBridge: '0xDB5492265f6038831E89f495670FF909aDe94bd9',
     },
@@ -195,8 +195,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia-optimism.etherscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0x347feeaBB5655a7a80b56D8D554DA30BE6c28225',
-      vaultImplementation: '0x26C4FD8fC66150ef5964562F7A69271fB0cd02A4',
+      vaultFactory: '0x3c5e4aCdC8Cd53ae5ae603B4c511885191fBb868',
+      vaultImplementation: '0xA45dBF322c5A3028687fEEB161603d3BCe02e119',
       wormholeCoreBridge: '0x31377888146f3253211EFEf5c676D41ECe7D58Fe',
       tokenBridge: '0x99737Ec4B815d816c49A385943baf0380e75c0Ac',
     },
@@ -209,23 +209,52 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.arbiscan.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0x708eEE22621A64CDF51d98d3e8D97902D7dF52dD',
-      vaultImplementation: '0x9f74Dc14A98E59df7AEC5571a2B9E329153dF5Cd',
+      vaultFactory: '0xB9C3e6bad3c6f26956be4a4bb5a366376Fd3045D',
+      vaultImplementation: '0x8601881b94B68B09b485f407317686103d3CB681',
       wormholeCoreBridge: '0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35',
       tokenBridge: '0xC7A204bDBFe983FCD8d8E61D02b475D4073fF97e',
     },
   },
-  seiTestnet: {
-    name: 'Sei Atlantic-2',
-    chainId: 1328,
-    wormholeChainId: 40,
-    rpcUrl: 'https://evm-rpc-testnet.sei-apis.com',
-    explorerUrl: 'https://seitrace.com/?chain=atlantic-2',
+  monadTestnet: {
+    name: 'Monad Testnet',
+    chainId: 10143,
+    wormholeChainId: 10048,
+    rpcUrl: 'https://testnet-rpc.monad.xyz',
+    explorerUrl: 'https://testnet.monadexplorer.com',
+    isEvm: true,
+    contracts: {
+      vaultFactory: '0xbE9B9c39956448DA75Ac97E5e3dE17e34171660A',
+      vaultImplementation: '0x500853DCc54Fd1A707ec9d443032Bb7748f426d3',
+      wormholeCoreBridge: '0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd',
+      tokenBridge: '0x0000000000000000000000000000000000000000',
+    },
+  },
+  avalancheFuji: {
+    name: 'Avalanche Fuji',
+    chainId: 43113,
+    wormholeChainId: 6,
+    rpcUrl: 'https://api.avax-test.network/ext/bc/C/rpc',
+    explorerUrl: 'https://testnet.snowtrace.io',
+    isEvm: true,
+    contracts: {
+      vaultFactory: '0x50F2c37584823A6cc293bd0d7647D558d05CA4C1',
+      vaultImplementation: '0x53d4D3943d0E524836f0B1955AbB216449F538fF',
+      wormholeCoreBridge: '0x7bbcE28e64B3F8b84d876Ab298393c38ad7aac4C',
+      tokenBridge: '0x61E44E506Ca5659E6c0bba9b678586fA2d729756',
+    },
+  },
+  polygonAmoy: {
+    name: 'Polygon Amoy',
+    chainId: 80002,
+    wormholeChainId: 10007,
+    rpcUrl: 'https://rpc-amoy.polygon.technology',
+    explorerUrl: 'https://amoy.polygonscan.com',
     isEvm: true,
     contracts: {
       vaultFactory: '0x07F608AFf6d63b68029488b726d895c4Bb593038',
       vaultImplementation: '0xD66153fccFB6731fB6c4944FbD607ba86A76a1f6',
-      wormholeCoreBridge: '0x0000000000000000000000000000000000000000', // Mock - not yet deployed
+      wormholeCoreBridge: '0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35',
+      tokenBridge: '0xC7A204bDBFe983FCD8d8E61D02b475D4073fF97e',
     },
   },
   solanaDevnet: {
@@ -262,24 +291,21 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://suiscan.xyz/testnet',
     isEvm: false,
     contracts: {
-      hub: '0x7f6b9a3f9dba7ac6b20d180a9274f525c23a2a9f7e5445218c595c3696c55667',
+      hub: '0x1f8f9b79561525275c2de4579a1e5243cfe789656ec666485b7737f4784c1bfc',
       wormholeCoreBridge: '0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790',
     },
   },
   starknetSepolia: {
     name: 'Starknet Sepolia',
-    chainId: 0, // Native Starknet chain ID (SN_SEPOLIA = 0x534e5f5345504f4c4941)
-    wormholeChainId: 50001, // Custom chain ID (50000+ reserved for non-Wormhole chains)
-    rpcUrl: 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/YOUR_ALCHEMY_KEY_HERE',
+    chainId: 0,
+    wormholeChainId: 50001,
+    rpcUrl: 'https://starknet-sepolia-rpc.publicnode.com',
     explorerUrl: 'https://sepolia.starkscan.co',
     isEvm: false,
     contracts: {
-      // Starknet spoke contract
-      hub: '0x46139177b8a1d7187cf35fbcddca637882a1d6f50d91f048c59d1322eee9ede',
-      // Custom bridge contract (NOT Wormhole)
-      wormholeCoreBridge: '0x700488242f8f03248b2311edddc394f0408a18c36181446eabd265067809c83',
+      hub: '0x1c87ca930ad46a5fef167f2d03d6df5b1dd6cdb841955c059edabb0566ff2d6',
+      wormholeCoreBridge: '0x30280c19d413eef7515c479186f206498c7f5077e30cb7277ce753d35adab00',
     },
-    // Hub chain ID that Starknet bridge validates (Base Sepolia = 10004)
     hubChainId: 10004,
   },
 };

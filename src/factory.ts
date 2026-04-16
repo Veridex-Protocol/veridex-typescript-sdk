@@ -469,6 +469,8 @@ export {
   isChainSupported,
   isHubChain,
   getDefaultHub,
+  configureDefaultRpcUrls,
+  getRpcUrlOverride,
 } from './presets.js';
 
 // Feature Flags
