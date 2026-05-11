@@ -48,7 +48,19 @@ export interface SessionConfig {
     /** Session duration in seconds (default: 3600 = 1 hour, max: 86400 = 24 hours) */
     duration: number;
     
-    /** Maximum transaction value in base units (0 = unlimited, but NOT RECOMMENDED) */
+    /**
+     * Maximum per-transaction value in base units.
+     *
+     * `0` is accepted by the on-chain Hub contract and means **"no per-tx
+     * limit from the session object"** — the transaction is then bounded
+     * only by the vault's daily cap (and any off-chain relayer policy).
+     * That is a deliberate protocol choice so callers can opt into
+     * vault-level bounding, but for most apps it is a foot-gun: an attacker
+     * who captures the session key can drain the vault up to the vault cap.
+     *
+     * The SDK therefore throws at `createSession` time when `maxValue === 0n`
+     * unless `allowUnboundedMaxValue: true` is set explicitly on the config.
+     */
     maxValue: bigint;
     
     /** Auto-refresh session before expiry (default: true) */
@@ -59,6 +71,15 @@ export interface SessionConfig {
     
     /** Chain scopes - which Wormhole chain IDs can use this session (empty = all chains) */
     chainScopes?: number[];
+
+    /**
+     * Opt-in for `maxValue === 0n` ("unlimited per-tx, bounded only by the
+     * vault daily cap"). Defaults to `false`. Set this only if you have
+     * verified that the vault has a non-trivial daily cap configured and
+     * that the risk of session-key compromise draining up to that cap is
+     * acceptable for your threat model.
+     */
+    allowUnboundedMaxValue?: boolean;
 }
 
 /**

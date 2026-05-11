@@ -125,6 +125,7 @@ class SessionManager {
             autoRefresh: config.autoRefresh ?? true,
             refreshBuffer: config.refreshBuffer ?? DEFAULT_REFRESH_BUFFER,
             chainScopes: config.chainScopes ?? [],
+            allowUnboundedMaxValue: config.allowUnboundedMaxValue ?? false,
         };
         
         validateSessionConfig(this.config);

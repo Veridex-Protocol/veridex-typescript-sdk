@@ -489,17 +489,66 @@ export class EVMClient implements ChainClient {
             nonce: Number(nonce),
         };
 
-        // Submit to relayer
-        const response = await fetch(`${relayerUrl}/api/v1/submit`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(request),
-        });
+        // Submit to relayer with retries for transient failures.
+        // Retry semantics:
+        //   - network errors (fetch throws) → retry up to 3 times
+        //   - HTTP 5xx                       → retry up to 3 times
+        //   - HTTP 408 / 429                 → retry up to 3 times (respect Retry-After if present)
+        //   - HTTP 4xx (incl. 403 policy)    → no retry, surface immediately
+        // Backoff: 1s, 2s, 4s (with small jitter)
+        const MAX_ATTEMPTS = 3;
+        const baseDelayMs = 1000;
+        const sleep = (ms: number) =>
+            new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+        let response: Response | undefined;
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                response = await fetch(`${relayerUrl}/api/v1/submit`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(request),
+                });
+
+                const retryable =
+                    response.status >= 500 ||
+                    response.status === 408 ||
+                    response.status === 429;
+
+                if (!retryable) {
+                    break; // success or deterministic failure
+                }
+
+                if (attempt === MAX_ATTEMPTS) break;
+
+                const retryAfter = response.headers.get('retry-after');
+                const explicitDelay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 0;
+                const backoff =
+                    explicitDelay > 0
+                        ? explicitDelay
+                        : baseDelayMs * 2 ** (attempt - 1) + Math.floor(Math.random() * 200);
+                await sleep(backoff);
+            } catch (err) {
+                lastError = err;
+                if (attempt === MAX_ATTEMPTS) break;
+                const backoff = baseDelayMs * 2 ** (attempt - 1) + Math.floor(Math.random() * 200);
+                await sleep(backoff);
+            }
+        }
+
+        if (!response) {
+            throw new Error(
+                `Relayer submission failed after ${MAX_ATTEMPTS} attempts: ${
+                    lastError instanceof Error ? lastError.message : String(lastError)
+                }`,
+            );
+        }
 
         if (!response.ok) {
-            const error = await response.json().catch(() => ({ error: response.statusText }));
+            const error = await response.json().catch(() => ({ error: response!.statusText }));
             throw new Error(`Relayer submission failed: ${error.error || response.statusText}`);
         }
 

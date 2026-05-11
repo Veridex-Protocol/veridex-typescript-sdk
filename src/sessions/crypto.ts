@@ -410,6 +410,7 @@ export async function decrypt(encryptedData: Uint8Array, key: CryptoKey): Promis
 export function validateSessionConfig(config: {
     duration: number;
     maxValue: bigint;
+    allowUnboundedMaxValue?: boolean;
 }): void {
     if (config.duration < MIN_SESSION_DURATION) {
         throw new SessionError(
@@ -428,6 +429,21 @@ export function validateSessionConfig(config: {
     if (config.maxValue < 0n) {
         throw new SessionError(
             'Session maxValue cannot be negative',
+            SessionErrorCode.INVALID_CONFIG
+        );
+    }
+
+    // VDX-SDK-SESSION-001: reject `maxValue === 0n` unless caller opts in.
+    // On-chain, 0 means "no per-tx limit from the session" — the vault daily
+    // cap is then the only bound. That is a deliberate protocol choice, but
+    // it is a foot-gun for most apps: a compromised session key can drain
+    // the vault up to the daily cap. Require explicit acknowledgement.
+    if (config.maxValue === 0n && config.allowUnboundedMaxValue !== true) {
+        throw new SessionError(
+            'Session maxValue=0 means "no per-tx limit" — the vault daily cap is then ' +
+                'the only bound. This is a foot-gun: a compromised session key can drain the ' +
+                'vault up to that cap. Pass a non-zero maxValue, or set allowUnboundedMaxValue:true ' +
+                'if you have verified the vault daily cap and accept the residual risk.',
             SessionErrorCode.INVALID_CONFIG
         );
     }
