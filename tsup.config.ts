@@ -17,6 +17,7 @@ const sharedEntry = {
     'chains/starknet/index': 'src/chains/starknet/index.ts',
     'chains/stacks/index': 'src/chains/stacks/index.ts',
     'chains/avalanche/index': 'src/chains/avalanche/index.ts',
+    'chains/stellar/index': 'src/chains/stellar/index.ts',
 };
 
 export default defineConfig([

@@ -89,6 +89,11 @@
       "import": "./dist/chains/avalanche/index.mjs",
       "require": "./dist/chains/avalanche/index.js"
     },
+    "./chains/stellar": {
+      "types": "./dist/chains/stellar/index.d.ts",
+      "import": "./dist/chains/stellar/index.mjs",
+      "require": "./dist/chains/stellar/index.js"
+    },
     "./passkey": {
       "types": "./dist/passkey.d.ts",
       "import": "./dist/passkey.mjs",
@@ -156,6 +161,8 @@
     "passkey",
     "webauthn",
     "ethereum",
+    "stellar",
+    "soroban",
     "solana",
     "aptos",
     "sui",
