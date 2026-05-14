@@ -68,7 +68,9 @@ const ERC20_ABI = [
 const HUB_ABI = [
     'function dispatch(tuple(bytes authenticatorData, string clientDataJSON, uint256 challengeIndex, uint256 typeIndex, uint256 r, uint256 s) signature, uint256 publicKeyX, uint256 publicKeyY, uint16 targetChain, bytes actionPayload, uint256 nonce) payable returns (uint64 sequence)',
     'function userNonces(bytes32 userKeyHash) view returns (uint256)',
-    'function getMessageFee() view returns (uint256)',
+    // Hub exposes the Wormhole core bridge address; message fee is read from the
+    // bridge directly (getMessageFee() was removed from the Hub).
+    'function wormhole() view returns (address)',
     'function getVaultAddress(bytes32 userKeyHash) view returns (address)',
     'function vaultExists(bytes32 userKeyHash) view returns (bool)',
     'function createVault(bytes32 userKeyHash) returns (address)',
@@ -140,6 +142,8 @@ export class EVMClient implements ChainClient {
     private hubContract: ethers.Contract;
     private factoryContract: ethers.Contract | null = null;
     private cachedImplementation: string | null = null;
+    private cachedWormholeAddress: string | null = null;
+    private cachedMessageFee: { value: bigint; expiresAt: number } | null = null;
 
     constructor(config: EVMClientConfig) {
         this.config = {
@@ -352,8 +356,30 @@ export class EVMClient implements ChainClient {
     }
 
     async getMessageFee(): Promise<bigint> {
-        const fee = await this.hubContract.getMessageFee();
-        return BigInt(fee.toString());
+        // Short cache to avoid hammering the RPC on every dispatch.
+        const now = Date.now();
+        if (this.cachedMessageFee && this.cachedMessageFee.expiresAt > now) {
+            return this.cachedMessageFee.value;
+        }
+
+        // Resolve the Wormhole core bridge address. Prefer the value supplied
+        // via config; otherwise read it from the Hub once and cache it.
+        let wormholeAddress =
+            this.config.contracts.wormholeCoreBridge ?? this.cachedWormholeAddress;
+        if (!wormholeAddress) {
+            wormholeAddress = await this.hubContract.wormhole();
+            this.cachedWormholeAddress = wormholeAddress;
+        }
+
+        const wormhole = new ethers.Contract(
+            wormholeAddress as string,
+            ['function messageFee() view returns (uint256)'],
+            this.provider,
+        );
+        const fee = await wormhole.messageFee();
+        const value = BigInt(fee.toString());
+        this.cachedMessageFee = { value, expiresAt: now + 30_000 };
+        return value;
     }
 
     async buildTransferPayload(params: TransferParams): Promise<string> {
@@ -1670,7 +1696,7 @@ export class EVMClient implements ChainClient {
     ): Promise<{ receipt: unknown; sequence: bigint }> {
         const s = signer as ethers.Signer;
         const hub = this.hubContract.connect(s) as ethers.Contract;
-        const fee = await this.hubContract.getMessageFee();
+        const fee = await this.getMessageFee();
         const tx = await hub.executeTransactionProposal(proposalId, { value: fee });
         const receipt = await tx.wait();
         const sequence = this._extractSequenceFromReceipt(receipt);
