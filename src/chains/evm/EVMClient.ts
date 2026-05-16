@@ -1580,14 +1580,31 @@ export class EVMClient implements ChainClient {
         proposalTtl: number;
         disableSessions: boolean;
     }> {
-        const result = await this.hubContract.getTransactionPolicy(identityKeyHash);
-        return {
-            enabled: result.enabled,
-            threshold: Number(result.threshold),
-            protectedActionMask: Number(result.protectedActionMask),
-            proposalTtl: Number(result.proposalTtl),
-            disableSessions: result.disableSessions,
-        };
+        try {
+            const result = await this.hubContract.getTransactionPolicy(identityKeyHash);
+            return {
+                enabled: result.enabled,
+                threshold: Number(result.threshold),
+                protectedActionMask: Number(result.protectedActionMask),
+                proposalTtl: Number(result.proposalTtl),
+                disableSessions: result.disableSessions,
+            };
+        } catch (error) {
+            // Hub deployments without ADR-0037 multisig support revert with no
+            // data on this selector. Treat that as "no policy configured" so
+            // direct dispatch is allowed. Re-throw unexpected errors.
+            const code = (error as { code?: string } | null)?.code;
+            if (code === 'CALL_EXCEPTION' || code === 'BAD_DATA') {
+                return {
+                    enabled: false,
+                    threshold: 0,
+                    protectedActionMask: 0,
+                    proposalTtl: 0,
+                    disableSessions: false,
+                };
+            }
+            throw error;
+        }
     }
 
     async createTransactionProposal(
