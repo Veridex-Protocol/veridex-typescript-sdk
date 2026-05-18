@@ -97,9 +97,9 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://sepolia.basescan.org',
       isEvm: true,
       contracts: {
-        hub: '0x23a39c294891703146c3607e1FEEB5Fe78F7F28d',
-        vaultFactory: '0x31e8dc9428575334739754Ab2bdB0E8b9Dc707FD',
-        vaultImplementation: '0xD65E996CD6d5B01689dc54ad30B51f1D88a100f5',
+        hub: '0xD5D29b6EaeE6FF4b765e704298a7e48D22607059',
+        vaultFactory: '0xb25b73D5FeD5693dcd1Bb78f8e33387B59A022EC',
+        vaultImplementation: '0x2CB8397df988c1880d9e5cFfF65bfC22D7D90EE6',
         wormholeCoreBridge: '0x79A1027a6A159502049F10906D333EC57E95F083',
         tokenBridge: '0x86F55A04690fd7815A3D802bD587e83eA888B239',
       },
@@ -134,8 +134,8 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://sepolia-optimism.etherscan.io',
       isEvm: true,
       contracts: {
-        vaultFactory: '0x347feeaBB5655a7a80b56D8D554DA30BE6c28225',
-        vaultImplementation: '0x26C4FD8fC66150ef5964562F7A69271fB0cd02A4',
+        vaultFactory: '0x3c5e4aCdC8Cd53ae5ae603B4c511885191fBb868',
+        vaultImplementation: '0xA45dBF322c5A3028687fEEB161603d3BCe02e119',
         wormholeCoreBridge: '0x31377888146f3253211EFEf5c676D41ECe7D58Fe',
         tokenBridge: '0x99737Ec4B815d816c49A385943baf0380e75c0Ac',
       },
@@ -169,8 +169,8 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://sepolia.arbiscan.io',
       isEvm: true,
       contracts: {
-        vaultFactory: '0x708eEE22621A64CDF51d98d3e8D97902D7dF52dD',
-        vaultImplementation: '0x9f74Dc14A98E59df7AEC5571a2B9E329153dF5Cd',
+        vaultFactory: '0xB9C3e6bad3c6f26956be4a4bb5a366376Fd3045D',
+        vaultImplementation: '0x8601881b94B68B09b485f407317686103d3CB681',
         wormholeCoreBridge: '0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35',
         tokenBridge: '0xC7A204bDBFe983FCD8d8E61D02b475D4073fF97e',
       },
@@ -204,8 +204,8 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://sepolia.etherscan.io',
       isEvm: true,
       contracts: {
-        vaultFactory: '0x52a6dc19C11b3B53B434Fc7f6D31F8b62ed18F0a',
-        vaultImplementation: '0xfab72dd1fd3AD79f738B49506f32251B60c95f01',
+        vaultFactory: '0x265c10763B4d16AD970bC3d7670c645e37f63AF4',
+        vaultImplementation: '0x942426C94652ebC48f4f404928016B95ADb1DA25',
         wormholeCoreBridge: '0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78',
         tokenBridge: '0xDB5492265f6038831E89f495670FF909aDe94bd9',
       },
@@ -624,7 +624,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://explorer.solana.com',
       isEvm: false,
       contracts: {
-        hub: 'AnyXHsqq9c2BiW4WgBcj6Aye7Ua7a7L7iSuwpfJxECJM',
+        hub: '64ZZBdmGd1YT6Fok7PELvAdfoXyR4PHxHnRqHNqZHJ13',
         wormholeCoreBridge: '3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5',
         tokenBridge: 'DZnkkTmCiFWfYTfT41X3Rd1kDgozqzxWaHqsw6W4x2oe',
       },
@@ -658,7 +658,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://explorer.aptoslabs.com',
       isEvm: false,
       contracts: {
-        hub: '0x2935e5d434c383c8f8b8af3b9596aa78b7238c308b5b0fe2bbd19e248b6f018f',
+        hub: '0x9e8641143245ab8b93af1417a1fbc698d40fd351a25f6c17e4210e59bf82c9c7',
         wormholeCoreBridge: '0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625',
         tokenBridge: '0x576410486a2da45eee6c949c995670112ddf2fbeedab20350d506328eefc9d4f',
       },
@@ -692,7 +692,7 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://suiscan.xyz/testnet',
       isEvm: false,
       contracts: {
-        hub: '0x7f6b9a3f9dba7ac6b20d180a9274f525c23a2a9f7e5445218c595c3696c55667',
+        hub: '0xaf36d8bc349883b23e78b00a342a656c799319508600583eaee9121ffaa7f5f7',
         wormholeCoreBridge: '0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790',
       },
     },
@@ -724,8 +724,8 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       explorerUrl: 'https://sepolia.starkscan.co',
       isEvm: false,
       contracts: {
-        hub: '0x46139177b8a1d7187cf35fbcddca637882a1d6f50d91f048c59d1322eee9ede',
-        wormholeCoreBridge: '0x700488242f8f03248b2311edddc394f0408a18c36181446eabd265067809c83',
+        hub: '0x7bb7cbe7d82e910b296611b582035a207343431f98bdd7b692bddfdd6f28737',
+        wormholeCoreBridge: '0x30d2e7f26dc75819cfddcd7caa26a76b681d5918f219c99060c42ce1e3f69e4',
       },
       hubChainId: 10004, // Base Sepolia
     },
@@ -759,13 +759,13 @@ export const CHAIN_PRESETS: Record<ChainName, ChainPreset> = {
       isEvm: false,
       contracts: {
         // Spoke contract: identity + session management
-        hub: 'ST398EE8PHNSACV2M9F5MYVVBSDS4ZZ0S44WCJ6KR.veridex-spoke',
+        hub: 'STWJ9E8J5NPKB4MT1378G6XWNFGAKRY1E6D6PYSM.veridex-spoke',
         // Vault contract: STX/sBTC custody
-        vaultFactory: 'ST398EE8PHNSACV2M9F5MYVVBSDS4ZZ0S44WCJ6KR.veridex-vault',
+        vaultFactory: 'STWJ9E8J5NPKB4MT1378G6XWNFGAKRY1E6D6PYSM.veridex-vault',
         wormholeCoreBridge: '',
         // Phase 2: Wormhole integration contracts
-        wormholeVerifier: 'ST398EE8PHNSACV2M9F5MYVVBSDS4ZZ0S44WCJ6KR.veridex-wormhole-verifier',
-        vaultVaa: 'ST398EE8PHNSACV2M9F5MYVVBSDS4ZZ0S44WCJ6KR.veridex-vault-vaa',
+        wormholeVerifier: 'STWJ9E8J5NPKB4MT1378G6XWNFGAKRY1E6D6PYSM.veridex-wormhole-verifier',
+        vaultVaa: 'STWJ9E8J5NPKB4MT1378G6XWNFGAKRY1E6D6PYSM.veridex-vault-vaa',
       },
       hubChainId: 10004, // Base Sepolia
     },

@@ -237,8 +237,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://testnet.snowtrace.io',
     isEvm: true,
     contracts: {
-      vaultFactory: '0x50F2c37584823A6cc293bd0d7647D558d05CA4C1',
-      vaultImplementation: '0x53d4D3943d0E524836f0B1955AbB216449F538fF',
+      vaultFactory: '0x9e9716442e908A9b61F11432cC38024DD390cd2a',
+      vaultImplementation: '0xE0b9919ffDf3415355Db369C8FfA5Dd4e000052c',
       wormholeCoreBridge: '0x7bbcE28e64B3F8b84d876Ab298393c38ad7aac4C',
       tokenBridge: '0x61E44E506Ca5659E6c0bba9b678586fA2d729756',
     },
@@ -265,7 +265,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://explorer.solana.com',
     isEvm: false,
     contracts: {
-      hub: 'AnyXHsqq9c2BiW4WgBcj6Aye7Ua7a7L7iSuwpfJxECJM',
+      hub: '64ZZBdmGd1YT6Fok7PELvAdfoXyR4PHxHnRqHNqZHJ13',
       wormholeCoreBridge: '3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5',
       tokenBridge: 'DZnkkTmCiFWfYTfT41X3Rd1kDgozqzxWaHqsw6W4x2oe',
     },
@@ -278,7 +278,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://explorer.aptoslabs.com',
     isEvm: false,
     contracts: {
-      hub: '0x2935e5d434c383c8f8b8af3b9596aa78b7238c308b5b0fe2bbd19e248b6f018f',
+      hub: '0x9e8641143245ab8b93af1417a1fbc698d40fd351a25f6c17e4210e59bf82c9c7',
       wormholeCoreBridge: '0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625',
       tokenBridge: '0x576410486a2da45eee6c949c995670112ddf2fbeedab20350d506328eefc9d4f',
     },
@@ -291,7 +291,7 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://suiscan.xyz/testnet',
     isEvm: false,
     contracts: {
-      hub: '0x1f8f9b79561525275c2de4579a1e5243cfe789656ec666485b7737f4784c1bfc',
+      hub: '0xaf36d8bc349883b23e78b00a342a656c799319508600583eaee9121ffaa7f5f7',
       wormholeCoreBridge: '0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790',
     },
   },
@@ -303,8 +303,8 @@ export const TESTNET_CHAINS: Record<string, ChainConfig> = {
     explorerUrl: 'https://sepolia.starkscan.co',
     isEvm: false,
     contracts: {
-      hub: '0x1c87ca930ad46a5fef167f2d03d6df5b1dd6cdb841955c059edabb0566ff2d6',
-      wormholeCoreBridge: '0x30280c19d413eef7515c479186f206498c7f5077e30cb7277ce753d35adab00',
+      hub: '0x7bb7cbe7d82e910b296611b582035a207343431f98bdd7b692bddfdd6f28737',
+      wormholeCoreBridge: '0x30d2e7f26dc75819cfddcd7caa26a76b681d5918f219c99060c42ce1e3f69e4',
     },
     hubChainId: 10004,
   },

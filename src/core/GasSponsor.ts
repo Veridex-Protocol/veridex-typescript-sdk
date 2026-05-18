@@ -99,8 +99,8 @@ const TESTNET_CHAINS: ChainDeploymentConfig[] = [
         chainId: 84532,
         wormholeChainId: 10004,
         rpcUrl: 'https://sepolia.base.org',
-        hubAddress: '0x23a39c294891703146c3607e1FEEB5Fe78F7F28d',
-        vaultFactory: '0x31e8dc9428575334739754Ab2bdB0E8b9Dc707FD',
+        hubAddress: '0xD5D29b6EaeE6FF4b765e704298a7e48D22607059',
+        vaultFactory: '0xb25b73D5FeD5693dcd1Bb78f8e33387B59A022EC',
         isHub: true,
     },
     {
@@ -108,14 +108,14 @@ const TESTNET_CHAINS: ChainDeploymentConfig[] = [
         chainId: 11155420,
         wormholeChainId: 10005,
         rpcUrl: 'https://sepolia.optimism.io',
-        vaultFactory: '0x347feeaBB5655a7a80b56D8D554DA30BE6c28225',
+        vaultFactory: '0x3c5e4aCdC8Cd53ae5ae603B4c511885191fBb868',
     },
     {
         name: 'Arbitrum Sepolia',
         chainId: 421614,
         wormholeChainId: 10003,
         rpcUrl: 'https://sepolia-rollup.arbitrum.io/rpc',
-        vaultFactory: '0x708eEE22621A64CDF51d98d3e8D97902D7dF52dD',
+        vaultFactory: '0xB9C3e6bad3c6f26956be4a4bb5a366376Fd3045D',
     },
 ];
 
