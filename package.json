@@ -4,13 +4,13 @@
   "description": "Veridex Protocol SDK - Client library for Passkey-based cross-chain authentication",
   "author": "Veridex Protocol <team@veridex.network>",
   "license": "MIT",
-  "homepage": "https://veridex.network",
+  "homepage": "https://github.com/Veridex-Protocol/veridex-typescript-sdk#readme",
   "bugs": {
-    "url": "https://github.com/Veridex-Protocol/sdk/issues"
+    "url": "https://github.com/Veridex-Protocol/veridex-typescript-sdk/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Veridex-Protocol/sdk.git"
+    "url": "git+https://github.com/Veridex-Protocol/veridex-typescript-sdk.git"
   },
   "main": "dist/index.js",
   "module": "dist/index.mjs",
