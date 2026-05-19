@@ -36,6 +36,26 @@ import { getEffectivePrimaryHub, isMultiHubEnabled } from './featureFlags.js';
 import type { ChainClient } from './core/types.js';
 
 // ============================================================================
+// Default Public Relayer URLs
+// ============================================================================
+
+/**
+ * Default public relayer URLs per network.
+ *
+ * When `relayerUrl` is not supplied to `createSDK`, the SDK falls back to the
+ * public Veridex relayer for that network so the zero-config developer flow
+ * advertised in the docs (`createSDK('base', { network: 'testnet' })`) actually
+ * works without an immediate `Relayer not configured` error.
+ *
+ * Rate limit on the public testnet relayer: 5 transfers / hour / IP. For
+ * production traffic, pass your own `relayerUrl` (and `relayerApiKey`).
+ */
+const DEFAULT_PUBLIC_RELAYER_URLS: Partial<Record<NetworkType, string>> = {
+  testnet: 'https://relayer.veridex.network',
+  // mainnet: '<set when public mainnet relayer ships>',
+};
+
+// ============================================================================
 // Simple Configuration Interface
 // ============================================================================
 
@@ -299,7 +319,7 @@ export function createSDK(
   return new VeridexSDK({
     chain: chainClient,
     testnet: network === 'testnet',
-    relayerUrl: config.relayerUrl,
+    relayerUrl: config.relayerUrl ?? DEFAULT_PUBLIC_RELAYER_URLS[network],
     relayerApiKey: config.relayerApiKey,
     sponsorPrivateKey: config.sponsorPrivateKey,
     integratorSponsorKey: config.integratorSponsorKey,
@@ -368,19 +388,47 @@ export function createMainnetSDK(
  * 
  * @example
  * ```typescript
- * import { createSessionSDK, SessionManager } from '@veridex/sdk';
- * 
- * const sdk = createSessionSDK('base');
- * const sessionManager = new SessionManager({ sdk });
- * 
- * // Create a session (one passkey auth)
- * const session = await sessionManager.createSession({
- *   duration: 3600,
- *   maxValue: BigInt(1e18),
+ * import {
+ *   createSessionSDK,
+ *   SessionManager,
+ *   EVMHubClientAdapter,
+ * } from '@veridex/sdk';
+ * import { JsonRpcProvider, Wallet, parseEther } from 'ethers';
+ *
+ * const sdk = createSessionSDK('base', { network: 'testnet' });
+ * await sdk.passkey.register('user@example.com', 'My Wallet');
+ *
+ * // SessionManager is positional (credential, hubClient, passkeySign, config).
+ * // The hub client needs an ethers signer because session registration is an
+ * // on-chain transaction.
+ * const provider = new JsonRpcProvider('https://sepolia.base.org');
+ * const signer = new Wallet(process.env.PRIVATE_KEY!, provider);
+ * const hubClient = new EVMHubClientAdapter(
+ *   sdk.getChainClient() as any,
+ *   signer as any,
+ * );
+ *
+ * const manager = new SessionManager(
+ *   sdk.getCredential()!,
+ *   hubClient,
+ *   (challenge) => sdk.passkey.sign(challenge),
+ *   { duration: 3600, maxValue: parseEther('0.05') },
+ * );
+ *
+ * const session = await manager.createSession();
+ *
+ * // Sign and submit each action explicitly via the relayer.
+ * const signed = await manager.signAction({
+ *   action: 'transfer',
+ *   targetChain: 10004,
+ *   payload,
+ *   nonce,
+ *   value,
  * });
- * 
- * // Execute multiple transactions without prompts
- * await sessionManager.executeWithSession(params, session);
+ * await sdk.relayer!.submitSignedAction({
+ *   ...signed.action,
+ *   signature: signed.signature,
+ * } as any);
  * ```
  */
 export function createSessionSDK(
