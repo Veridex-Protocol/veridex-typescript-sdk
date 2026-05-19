@@ -692,6 +692,7 @@ describe('validateSessionConfig', () => {
         expect(() => validateSessionConfig({
             duration: MIN_SESSION_DURATION,
             maxValue: 0n,
+            allowUnboundedMaxValue: true,
         })).not.toThrow();
     });
     
@@ -699,6 +700,7 @@ describe('validateSessionConfig', () => {
         expect(() => validateSessionConfig({
             duration: MAX_SESSION_DURATION,
             maxValue: 0n,
+            allowUnboundedMaxValue: true,
         })).not.toThrow();
     });
     
@@ -723,11 +725,19 @@ describe('validateSessionConfig', () => {
         })).toThrow(SessionError);
     });
     
-    it('should accept zero maxValue (unlimited)', () => {
+    it('should accept zero maxValue (unlimited) when explicitly opted-in', () => {
         expect(() => validateSessionConfig({
             duration: 3600,
             maxValue: 0n,
+            allowUnboundedMaxValue: true,
         })).not.toThrow();
+    });
+
+    it('should reject zero maxValue without explicit opt-in (foot-gun guard)', () => {
+        expect(() => validateSessionConfig({
+            duration: 3600,
+            maxValue: 0n,
+        })).toThrow(SessionError);
     });
     
     it('should accept large maxValue', () => {

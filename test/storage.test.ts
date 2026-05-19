@@ -151,9 +151,11 @@ describe('LocalStorageSessionStorage', () => {
             
             await storage.save(session);
             
-            // Get raw stored data - key is derived from credential ID hash
-            const storageKey = `veridex-session-${ethers.keccak256(ethers.toUtf8Bytes(testCredentialId))}`;
-            const storedData = mockStorage.getItem(storageKey);
+            // The storage layout is an implementation detail; read whatever key was
+            // written rather than reconstructing it.
+            const storageKey = mockStorage.key(0);
+            expect(storageKey).toBeTruthy();
+            const storedData = mockStorage.getItem(storageKey!);
             expect(storedData).toBeDefined();
             
             const parsed = JSON.parse(storedData!);
@@ -172,8 +174,9 @@ describe('LocalStorageSessionStorage', () => {
             
             await storage.save(session);
             
-            const storageKey = `veridex-session-${ethers.keccak256(ethers.toUtf8Bytes(testCredentialId))}`;
-            const storedData = mockStorage.getItem(storageKey);
+            const storageKey = mockStorage.key(0);
+            expect(storageKey).toBeTruthy();
+            const storedData = mockStorage.getItem(storageKey!);
             const parsed = JSON.parse(storedData!);
             
             expect(typeof parsed.publicKey).toBe('string');
@@ -187,25 +190,26 @@ describe('LocalStorageSessionStorage', () => {
             
             await storage.save(session);
             
-            const storageKey = `veridex-session-${ethers.keccak256(ethers.toUtf8Bytes(testCredentialId))}`;
-            const storedData = mockStorage.getItem(storageKey);
+            const storageKey = mockStorage.key(0);
+            expect(storageKey).toBeTruthy();
+            const storedData = mockStorage.getItem(storageKey!);
             const parsed = JSON.parse(storedData!);
             
             expect(typeof parsed.maxValue).toBe('string');
             expect(parsed.maxValue).toBe('12345678901234567890');
         });
         
-        it('should overwrite existing session with same credential', async () => {
+        it('should overwrite existing session with same key hash', async () => {
+            // Multi-session storage keys entries by session keyHash. Saving the same
+            // session twice should overwrite the existing entry rather than create
+            // a second one.
             const session = createTestSessionKey();
             
             await storage.save(session);
             const initialLength = mockStorage.length;
             
-            // Save again with same credential but different session
-            const newSession = createTestSessionKey();
-            await storage.save(newSession);
+            await storage.save(session);
             
-            // Should still be just 1 entry (overwritten)
             expect(mockStorage.length).toBe(initialLength);
         });
     });

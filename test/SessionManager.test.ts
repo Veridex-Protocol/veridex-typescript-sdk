@@ -346,15 +346,21 @@ describe('SessionManager', () => {
         });
         
         it('should allow unlimited value if maxValue is 0', async () => {
-            // Create session with unlimited value
+            // Create session with unlimited value (requires explicit opt-in to acknowledge
+            // that the vault daily cap is the only bound on session spending).
+            const unboundedConfig = {
+                ...sessionConfig,
+                maxValue: 0n,
+                allowUnboundedMaxValue: true,
+            };
             const unlimitedManager = new SessionManager(
                 mockCredential,
                 mockHub,
                 mockPasskeySign,
-                { ...sessionConfig, maxValue: 0n },
-                { 
-                    defaultSessionConfig: { ...sessionConfig, maxValue: 0n },
-                    storageBackend: 'localstorage' 
+                unboundedConfig,
+                {
+                    defaultSessionConfig: unboundedConfig,
+                    storageBackend: 'localstorage',
                 }
             );
             
@@ -610,6 +616,7 @@ describe('SessionManager', () => {
                 {
                     duration: 60,
                     maxValue: 0n,
+                    allowUnboundedMaxValue: true,
                     autoRefresh: true,
                     refreshBuffer: 300, // 5 minutes (longer than duration)
                     chainScopes: [],
@@ -618,6 +625,7 @@ describe('SessionManager', () => {
                     defaultSessionConfig: {
                         duration: 60,
                         maxValue: 0n,
+                        allowUnboundedMaxValue: true,
                         autoRefresh: true,
                         refreshBuffer: 300,
                         chainScopes: [],
