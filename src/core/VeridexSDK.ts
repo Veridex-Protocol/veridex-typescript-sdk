@@ -2553,10 +2553,13 @@ export class VeridexSDK {
         // Nonce for key-management is stored on the *identity* (not necessarily the signing key)
         const nonce = await this.chain.getNonce(state.identity);
 
-        // Challenge = abi.encodePacked("VERIDEX_ADD_KEY", identityKeyHash, newKeyHash, nonce)
+        // Challenge = abi.encodePacked("VERIDEX_ADD_KEY", identityKeyHash, newKeyHash, nonce, hubChainId)
+        // hubChainId binds the signature to a specific Hub, preventing cross-hub replay.
+        const addKeyChainConfig = this.chain.getConfig();
+        const addKeyHubChainId = addKeyChainConfig.hubChainId ?? addKeyChainConfig.wormholeChainId;
         const packedChallenge = ethers.solidityPacked(
-            ['string', 'bytes32', 'bytes32', 'uint256'],
-            ['VERIDEX_ADD_KEY', state.identity, newCredential.keyHash, nonce]
+            ['string', 'bytes32', 'bytes32', 'uint256', 'uint16'],
+            ['VERIDEX_ADD_KEY', state.identity, newCredential.keyHash, nonce, addKeyHubChainId]
         );
 
         const signature = await this.passkey.sign(ethers.getBytes(packedChallenge));
@@ -2632,10 +2635,13 @@ export class VeridexSDK {
         // Nonce for key-management is stored on the *identity*
         const nonce = await this.chain.getNonce(state.identity);
 
-        // Challenge = abi.encodePacked("VERIDEX_REMOVE_KEY", identityKeyHash, keyToRemove, nonce)
+        // Challenge = abi.encodePacked("VERIDEX_REMOVE_KEY", identityKeyHash, keyToRemove, nonce, hubChainId)
+        // hubChainId binds the signature to a specific Hub, preventing cross-hub replay.
+        const removeKeyChainConfig = this.chain.getConfig();
+        const removeKeyHubChainId = removeKeyChainConfig.hubChainId ?? removeKeyChainConfig.wormholeChainId;
         const packedChallenge = ethers.solidityPacked(
-            ['string', 'bytes32', 'bytes32', 'uint256'],
-            ['VERIDEX_REMOVE_KEY', state.identity, keyToRemove, nonce]
+            ['string', 'bytes32', 'bytes32', 'uint256', 'uint16'],
+            ['VERIDEX_REMOVE_KEY', state.identity, keyToRemove, nonce, removeKeyHubChainId]
         );
 
         const signature = await this.passkey.sign(ethers.getBytes(packedChallenge));
