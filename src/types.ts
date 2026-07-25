@@ -55,6 +55,7 @@ export interface PasskeyCredential {
   publicKeyX: bigint;
   publicKeyY: bigint;
   keyHash: string;
+  assurance?: any;
 }
 
 export interface WebAuthnSignature {

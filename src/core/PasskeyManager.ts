@@ -23,11 +23,44 @@ import { buildRelayerApiUrl, normalizeRelayerOrigin } from './relayerUrl.js';
 // Types
 // ============================================================================
 
+/**
+ * Assurance tier of a credential, derived from the authoritative WebAuthn
+ * Backup Eligibility (BE) flag — not from a platform guess.
+ *
+ * - `device-bound`: BE=0. The private key cannot leave the authenticator
+ *   (secure element, or a hardware key such as a YubiKey). Not recoverable.
+ * - `synced`: BE=1. The credential is eligible for sync/backup by a provider
+ *   (iCloud Keychain, Google Password Manager, Windows Hello). Recoverable via
+ *   the user's platform account — which its security therefore depends on.
+ * - `unknown`: flags were not determinable from the registration response.
+ */
+export type CredentialAssuranceLevel = 'device-bound' | 'synced' | 'unknown';
+
+/** WebAuthn-derived assurance metadata for a credential. */
+export interface CredentialAssurance {
+    /** BE flag (0x08) — credential may be backed up / synced by a provider. */
+    backupEligible: boolean;
+    /** BS flag (0x10) — credential is currently backed up / synced. */
+    backupState: boolean;
+    /** UV flag (0x04) — user was verified (biometric/PIN) at registration. */
+    userVerified: boolean;
+    /** Tier derived from BE. Consumed by the policy engine to gate authority. */
+    level: CredentialAssuranceLevel;
+    /** Authenticator model identifier (16-byte AAGUID, hex). Zeroed by many platform authenticators. */
+    aaguid?: string;
+}
+
 export interface PasskeyCredential {
     credentialId: string;
     publicKeyX: bigint;
     publicKeyY: bigint;
     keyHash: string;
+    /**
+     * Authoritative assurance derived from the WebAuthn authenticator data.
+     * Optional for backward compatibility with credentials constructed from
+     * stored fields (e.g. env vars) that predate assurance capture.
+     */
+    assurance?: CredentialAssurance;
 }
 
 export interface WebAuthnSignature {
@@ -215,6 +248,7 @@ export class PasskeyManager {
             publicKeyX: publicKey.x,
             publicKeyY: publicKey.y,
             keyHash,
+            assurance: PasskeyManager.assuranceFromRegistration(response) ?? undefined,
         };
 
         return this.credential;
@@ -678,6 +712,7 @@ export class PasskeyManager {
             publicKeyX: publicKey.x,
             publicKeyY: publicKey.y,
             keyHash,
+            assurance: PasskeyManager.assuranceFromRegistration(response) ?? undefined,
         };
 
         // Store locally alongside existing credentials
@@ -701,21 +736,110 @@ export class PasskeyManager {
         backupState: boolean;
     } | null {
         try {
-            const data = ethers.getBytes(authenticatorData);
-            if (data.length < 37) return null;
-
-            // Flags byte is at offset 32 (after the 32-byte rpIdHash)
-            const flags = data[32];
-
-            // Bit 3 (0x08) = Backup Eligible (BE)
-            // Bit 4 (0x10) = Backup State (BS)
+            const assurance = PasskeyManager.deriveAssurance(ethers.getBytes(authenticatorData));
+            if (!assurance) return null;
             return {
-                backupEligible: (flags & 0x08) !== 0,
-                backupState: (flags & 0x10) !== 0,
+                backupEligible: assurance.backupEligible,
+                backupState: assurance.backupState,
             };
         } catch {
             return null;
         }
+    }
+
+    /**
+     * Derive credential assurance from raw WebAuthn authenticator data.
+     *
+     * authData layout:
+     *   rpIdHash (32) | flags (1) | signCount (4) | [attestedCredentialData: aaguid (16) | ...]
+     *
+     * Flags byte: UP 0x01 | UV 0x04 | BE 0x08 | BS 0x10 | AT 0x40 | ED 0x80
+     *
+     * BE is the authoritative signal for whether a credential is device-bound or
+     * syncable. It is set by the authenticator itself — unlike a platform/user-agent
+     * guess, it correctly identifies a hardware key used on a syncing platform.
+     *
+     * @returns Assurance, or `null` if authData is too short to be valid.
+     */
+    static deriveAssurance(authData: Uint8Array): CredentialAssurance | null {
+        if (authData.length < 37) return null;
+
+        const flags = authData[32];
+        const backupEligible = (flags & 0x08) !== 0;
+        const attestedCredentialData = (flags & 0x40) !== 0;
+
+        // AAGUID is the first 16 bytes of attestedCredentialData, which begins at
+        // offset 37 (after rpIdHash + flags + signCount) and is only present when AT is set.
+        let aaguid: string | undefined;
+        if (attestedCredentialData && authData.length >= 53) {
+            aaguid = ethers.hexlify(authData.slice(37, 53));
+        }
+
+        return {
+            backupEligible,
+            backupState: (flags & 0x10) !== 0,
+            userVerified: (flags & 0x04) !== 0,
+            level: backupEligible ? 'synced' : 'device-bound',
+            aaguid,
+        };
+    }
+
+    /**
+     * Extract raw authenticator data from a registration response.
+     *
+     * Prefers the `authenticatorData` field when the authenticator provides it,
+     * and otherwise locates the `authData` byte string inside the CBOR
+     * attestation object.
+     */
+    private static extractAuthData(response: RegistrationResponseJSON): Uint8Array | null {
+        const direct = response.response.authenticatorData;
+        if (direct) {
+            try {
+                return base64URLDecode(direct);
+            } catch {
+                // fall through to the attestation object
+            }
+        }
+
+        try {
+            const attestationObject = base64URLDecode(response.response.attestationObject);
+            let offset = 0;
+
+            // Skip the CBOR map header
+            if (attestationObject[offset] >= 0xa0 && attestationObject[offset] <= 0xbf) {
+                offset++;
+            }
+
+            // Locate the "authData" text key (0x68 = text string of 8 bytes)
+            const key = [0x68, 0x61, 0x75, 0x74, 0x68, 0x44, 0x61, 0x74, 0x61];
+            let found = false;
+            while (offset < attestationObject.length - 37) {
+                if (key.every((byte, i) => attestationObject[offset + i] === byte)) {
+                    offset += key.length;
+                    found = true;
+                    break;
+                }
+                offset++;
+            }
+            if (!found) return null;
+
+            // Skip the byte-string header (0x58 = 1-byte length, 0x59 = 2-byte length)
+            if (attestationObject[offset] === 0x58) {
+                offset += 2;
+            } else if (attestationObject[offset] === 0x59) {
+                offset += 3;
+            }
+
+            return attestationObject.slice(offset);
+        } catch {
+            return null;
+        }
+    }
+
+    /** Derive assurance directly from a registration response. */
+    static assuranceFromRegistration(response: RegistrationResponseJSON): CredentialAssurance | null {
+        const authData = PasskeyManager.extractAuthData(response);
+        return authData ? PasskeyManager.deriveAssurance(authData) : null;
     }
 
     /**

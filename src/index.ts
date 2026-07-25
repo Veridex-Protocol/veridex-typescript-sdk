@@ -98,7 +98,13 @@ export type {
 
 export { VeridexSDK } from './core/VeridexSDK.js';
 export { PasskeyManager, detectRpId, VERIDEX_RP_ID, supportsRelatedOrigins } from './core/PasskeyManager.js';
-export type { PasskeyCredential, PasskeyManagerConfig, WebAuthnSignature } from './core/PasskeyManager.js';
+export type {
+    PasskeyCredential,
+    PasskeyManagerConfig,
+    WebAuthnSignature,
+    CredentialAssurance,
+    CredentialAssuranceLevel,
+} from './core/PasskeyManager.js';
 
 // Browser Capabilities Detection
 export { detectCapabilities, getAuthStrategy, detectPlatform } from './core/BrowserCapabilities.js';
